@@ -1,6 +1,8 @@
 import Foundation
 
 public struct Tokeniser {
+    public init() {}
+    
     func echo(what: String) {
         print(what)
     }
