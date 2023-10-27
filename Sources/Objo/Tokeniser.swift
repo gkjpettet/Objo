@@ -8,7 +8,6 @@
 import Foundation
 
 public class Tokeniser {
-
     // MARK: - Properties
     
     /// The individual characters of the source currently being processed.
@@ -53,8 +52,69 @@ public class Tokeniser {
     ///  ^
     /// ```
     /// Note: We allow the use of `_` as a digit separator.
-    private func addNumber() {
-        // TODO: Implement.
+    private func addNumber() throws {
+        var char: Character
+        var lexeme: [Character] = []
+        
+        while !atEnd() && peek().isDigitOrUnderscore() {
+            char = advance()
+            if char != "_" { lexeme.append(char) }
+        }
+        
+        // Edge case 1: Prohibit a trailing underscore.
+        if previous() == "_" {
+            throw error(type: .unexpectedCharacter, message: "Underscores can separate digits within a number but a number cannot end with one.")
+        }
+        
+        // Is this a double or a whole number?
+        var isInt = false
+        if peek() == "." && peek(distance: 1).isNumber {
+            isInt = false
+            
+            // Consume the dot.
+            lexeme.append(advance())
+            
+            while peek().isDigitOrUnderscore() {
+                char = advance()
+                if char != "_" { lexeme.append(char) }
+            }
+            
+            // Edge case 2: Prohibit a trailing underscore within a double.
+            if previous() == "_" {
+                throw error(type: .unexpectedCharacter, message: "Underscores can separate digits within a number but a number cannot end with one.")
+            }
+            
+            // Is there an exponent?
+            if peek() == "e" || peek() == "E" {
+                var seenExponentDigit = false
+                var nextChar = peek(distance: 1)
+                if nextChar == "-" || nextChar == "+" {
+                    if nextChar == "-" { isInt = false }
+                    // Advance twice to consume the e/E and sign character.
+                    lexeme.append(advance())
+                    lexeme.append(advance())
+                    while peek().isNumber {
+                        lexeme.append(advance())
+                        seenExponentDigit = true
+                    }
+                } else if nextChar.isNumber {
+                    // Consume the e/E character.
+                    lexeme.append(advance())
+
+                    while peek().isNumber {
+                        lexeme.append(advance())
+                        seenExponentDigit = true
+                    }
+                }
+                
+                if !seenExponentDigit {
+                    throw error(type: .syntaxError, message: "Unterminated scientific notation.")
+                }
+            }
+        }
+        
+        // TODO: Finish - need to actually add the token.
+        // Needs to be a number token which probably means we need an interface??
     }
     
     /// Adds `token` to the internal `_tokens` array.
@@ -96,7 +156,7 @@ public class Tokeniser {
     /// Assumes we're at the beginning of a comment (i.e. have just consumed the `#`).
     private func consumeComment() {
         while true {
-            if peek() == nil {
+            if peek() == "\0" {
                 addToken(makeToken(type: .endOfLine, hasLexeme: false))
                 break
             } else if atEnd() {
@@ -128,9 +188,9 @@ public class Tokeniser {
     }
     
     /// Returns `_chars(_current + distance)` but doesn't consume it.
-    /// If we've reached the end it returns nil.
-    private func peek(distance: Int = 0) -> Character? {
-        return _current + distance < _chars.count ? _chars[_current + distance] : nil
+    /// If we've reached the end it returns the null character (\0)
+    private func peek(distance: Int = 0) -> Character {
+        return _current + distance < _chars.count ? _chars[_current + distance] : "\0"
     }
     
     /// Advances through `_chars` from the current character and adds the next token to `_tokens`.
@@ -169,6 +229,15 @@ public class Tokeniser {
         throw error(type: .unexpectedCharacter, message: "Unexpected character.")
     }
     
+    /// Returns the previously consumed character or nil if this is the first character.
+    private func previous() -> Character? {
+        if _current - 1 >= 0 {
+            return _chars[_current - 1]
+        } else {
+            return nil
+        }
+    }
+    
     /// Resets the tokeniser's internal properties, ready to tokenise again.
     public func reset() {
         _chars = []
@@ -188,7 +257,7 @@ public class Tokeniser {
     private func skipWhitespace() {
     whileLoop: while true {
             switch peek() {
-            case nil:
+            case "\0":
                 break whileLoop
                 
             case " ", "\t":
