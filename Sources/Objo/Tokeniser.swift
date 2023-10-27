@@ -17,10 +17,14 @@ public class Tokeniser {
     private var _current: Int = 0
     /// The 1-based number of the line currently being processed.
     private var _lineNumber: Int = 1
+    /// The previously consumed character.
+    private var _previousCharacter: Character? = nil
     /// The id of the script current being processed.
     private var _scriptId: Int = -1
     /// The source currently being processed.
     private var _source: String = ""
+    /// The tokens to return.
+    private var _tokens: [Token] = []
     /// The 0-based index in `_chars` that the current token starts at.
     private var _tokenStart: Int = 0
     
@@ -30,9 +34,77 @@ public class Tokeniser {
     
     // MARK: - Private methods
 
+    // TODO: Implement
+    private func addBinaryLiteral() -> Bool {
+        
+    }
+    
+    // TODO: Implement
+    private func addHexLiteral() -> Bool {
+        
+    }
+    
+    /// Consumes and adds a number token starting at `_current`.
+    ///
+    /// Assumes that we've just consumed the first (and possibly only) digit:
+    ///
+    /// ```
+    /// 100
+    ///  ^
+    /// ```
+    /// Note: We allow the use of `_` as a digit separator.
+    private func addNumber() {
+        // TODO: Implement.
+    }
+    
+    /// Adds `token` to the internal `_tokens` array.
+    /// Handles end of line tokens.
+    private func addToken(_ token: Token) {
+        if token.type == .endOfLine {
+            if _tokens.isEmpty {
+                // Prevent the first token from being an eol.
+                return
+            } else if _tokens.last?.type == .endOfLine {
+                // Prevent contiguous end of line tokens.
+                return
+            } else {
+                // We can add this end of line token.
+                _tokens.append(token)
+                return
+            }
+        }
+        
+        // Add this token.
+        _tokens.append(token)
+    }
+    
+    /// Consumes and returns the current character.
+    private func advance() -> Character {
+        _current += 1
+        return _chars[_current - 1]
+    }
+    
     /// Returns `true` if the tokeniser has reached the end of the source code.
     private func atEnd() -> Bool {
         return _current >= _chars.count
+    }
+    
+    /// Consumes all characters until the end of the line or eof.
+    /// Does *not* consume the eol if one is reached.
+    /// Comments begin with `#`.
+    ///
+    /// Assumes we're at the beginning of a comment (i.e. have just consumed the `#`).
+    private func consumeComment() {
+        while true {
+            if peek() == nil {
+                addToken(makeToken(type: .endOfLine, hasLexeme: false))
+                break
+            } else if atEnd() {
+                break
+            } else {
+                _ = advance()
+            }
+        }
     }
     
     /// Returns a lexer error of the specified type at the current position.
@@ -55,8 +127,14 @@ public class Tokeniser {
         }
     }
     
-    /// Advances through `_chars` from the current character to construct and return the next token.
-    private func nextToken() throws -> Token {
+    /// Returns `_chars(_current + distance)` but doesn't consume it.
+    /// If we've reached the end it returns nil.
+    private func peek(distance: Int = 0) -> Character? {
+        return _current + distance < _chars.count ? _chars[_current + distance] : nil
+    }
+    
+    /// Advances through `_chars` from the current character and adds the next token to `_tokens`.
+    private func nextToken() throws {
         // Track where in _chars this token begins.
         _tokenStart = _current
         
@@ -64,7 +142,28 @@ public class Tokeniser {
         
         // Have we reached the end of the source code?
         if atEnd() {
-            return makeToken(type: .endOfLine, hasLexeme: false)
+            addToken(makeToken(type: .endOfLine, hasLexeme: false))
+            addToken(makeToken(type: .eof, hasLexeme: false))
+            return
+        }
+        
+        // Get the character to evaluate.
+        let c = advance()
+        
+        // ====================================================================
+        // Numbers.
+        // ====================================================================
+        if c.isNumber {
+            if c == "0" && peek() == "x" {
+                // Maybe hex literal (e.g. 0xFF).
+                if addHexLiteral() { return }
+            } else if c == "0" && peek() == "b" {
+                // Maybe binary literal (e.g. 0b10).
+                if addBinaryLiteral() { return }
+            } else {
+                addNumber()
+                return
+            }
         }
         
         throw error(type: .unexpectedCharacter, message: "Unexpected character.")
@@ -75,14 +174,59 @@ public class Tokeniser {
         _chars = []
         _current = 0
         _lineNumber = 1
+        _previousCharacter = nil
         _scriptId = -1
         _source = ""
         _tokenStart = 0
+        _tokens = []
     }
     
-    // TODO: Implement
+    /// Advances past whitespace.
+    ///
+    /// Updates `_tokenStart` if needed.
+    /// Handles newlines following an underscore token.
     private func skipWhitespace() {
-        
+    whileLoop: while true {
+            switch peek() {
+            case nil:
+                break whileLoop
+                
+            case " ", "\t":
+                _ = advance()
+                
+            case "#": // Comment.
+                consumeComment()
+                
+            case "\n":
+                let lastTokenType = _tokens.last?.type
+                
+                // Was the last token an underscore? If so, we remove the underscore
+                // token and omit adding an eol token. To the parser, this will
+                // appear as though the tokens before the underscore token and those
+                // following this newline are on the same line.
+                switch lastTokenType {
+                case .underscore:
+                    _ = _tokens.popLast()
+                    _ =  advance()
+                    _lineNumber += 1
+                    
+                case .comma, .lcurly, .lsquare:
+                    // Omit adding an eol token. To the parser, this will appear as though the
+                    // tokens before this and those following this new line are on the same line.
+                    // This allows us to split map and list literals over multiple lines.
+                    _ = advance()
+                    _lineNumber += 1
+                    
+                default:
+                    addToken(makeToken(type: .endOfLine, hasLexeme: false))
+                    _ = advance()
+                    _lineNumber += 1
+                }
+                
+            default:
+                break whileLoop
+            }
+        }
     }
     
     /// Tokenises Objo source code into an array of tokens.
@@ -103,35 +247,16 @@ public class Tokeniser {
         // Split the source into characters.
         _chars = Array(_source)
         
-        // Create an empty Token array we can return to the caller.
-        var tokens: [Token] = []
-        
         // Tokenise.
         repeat {
-            // Get the next token.
-            let token = try nextToken()
-            
-            // We need to handle end of lines differently than other tokens.
-            if token.type == .endOfLine {
-             // Prevent the first token from being an eol.
-                if tokens.isEmpty {
-                    continue
-                } else if tokens.last?.type == .endOfLine {
-                    // Prevent contiguous end of line tokens.
-                    continue
-                } else {
-                    // We can add this end of line token.
-                    tokens.append(token)
-                    continue
-                }
-            }
-            
-            // All other tokens
-            tokens.append(token)
+            try nextToken()
         } while !atEnd()
         
-        if includeEOF { tokens.append(makeEofToken()) }
+        // Remove the EOF token if requested.
+        if !includeEOF { _ = _tokens.popLast() }
             
-        return tokens
+        // Since struct arrays are a value type we can return the internal Token array
+        // and it should be copied.
+        return _tokens
     }
 }
