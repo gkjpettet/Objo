@@ -9,6 +9,7 @@ import Foundation
 
 public struct LexerError: Error {
     public enum ErrorType {
+        case syntaxError
         case unexpectedCharacter
     }
     

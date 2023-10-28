@@ -7,25 +7,15 @@
 
 import Foundation
 
-public struct Token {
-    
+public protocol Token {
     /// This token's optional lexeme.
-    public let lexeme: String?
+    var lexeme: String? { get }
     /// The 1-based line number this token begins on.
-    public let line: Int
+    var line: Int { get }
     /// The 0-based index of the first character of this token in the original source code.
-    public let start: Int
+    var start: Int { get }
     /// The ID of the script this token belongs to.
-    public let scriptId: Int
+    var scriptId: Int { get }
     /// The type of token.
-    public let type: TokenType
-    
-    public init(type: TokenType, start: Int, line: Int, lexeme: String?, scriptId: Int) {
-        self.type = type
-        self.start = start
-        self.line = line
-        self.lexeme = lexeme
-        self.scriptId = scriptId
-    }
-    
+    var type: TokenType { get }
 }

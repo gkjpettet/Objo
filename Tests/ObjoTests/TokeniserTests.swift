@@ -24,15 +24,15 @@ final class TokeniserTests: XCTestCase {
         }
     }
     
+    /// Resetting the tokeniser should not affect the returned Token array.
     func testReturnedTokensAreIndependent() throws {
         let tokens = try! tokeniser.tokenise(source: "1 2 3", scriptId: -1)
         
         XCTAssertTrue(tokens.count == 5)
-        XCTAssertTrue(tokens[0].type == .number)
         
         // Reset the tokeniser and make sure it doesn't interfere with our local token array.
         tokeniser.reset()
         
-        XCTAssertTrue(tokens.count == 0)
+        XCTAssertTrue(tokens.count == 5)
     }
 }

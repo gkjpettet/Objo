@@ -33,14 +33,88 @@ public class Tokeniser {
     
     // MARK: - Private methods
 
-    // TODO: Implement
+    /// Attempts to add a binary literal token beginning at the current position.
+    /// Returns `true` if successful.
+    ///
+    /// Assumes that `_current` points to the "0" character illustrated below **and**
+    /// that the next character is definitely a "b":
+    /// ```
+    /// 0b1100
+    ///  ^
+    /// ```
     private func addBinaryLiteral() -> Bool {
+        // Move past the "b" character.
+        _ = advance()
         
+        // Me need to see at least one binary digit.
+        if !peek().isBinaryDigit() {
+            // Rewind a character (since we advanced past the "b").
+            _current -= 1
+            return false
+        } else {
+            _ = advance()
+        }
+        
+        // Consume all contiguous binary digits.
+        while peek().isBinaryDigit() {
+            _ = advance()
+        }
+        
+        // The next character must not be a letter.
+        if peek().isLetter {
+            // Rewind to the character after the token start position.
+            _current = _tokenStart + 1
+            return false
+        }
+        
+        // Compute the lexeme (without the "0b" prefix).
+        let lexeme = String(_chars[_tokenStart + 2..._current - _tokenStart - 2])
+        
+        // Compute the value as an unsigned integer.
+        let value = Int(lexeme, radix: 2)
+        
+        // Create and add this literal as a number token.
+        _tokens.append(NumberToken(value: Double(value!), isInteger: true, start: _tokenStart, line: _lineNumber, lexeme: "0b\(lexeme)", scriptId: _scriptId))
+        
+        return true
     }
     
     // TODO: Implement
     private func addHexLiteral() -> Bool {
+        // Move past the "x" character.
+        _ = advance()
         
+        // Me need to see at least one hex digit.
+        if !peek().isHexDigit {
+            // Rewind a character (since we advanced past the "x").
+            _current -= 1
+            return false
+        } else {
+            _ = advance()
+        }
+        
+        // Consume all contiguous hex digits.
+        while peek().isHexDigit {
+            _ = advance()
+        }
+        
+        // The next character must not be a letter.
+        if peek().isLetter {
+            // Rewind to the character after the token start position.
+            _current = _tokenStart + 1
+            return false
+        }
+        
+        // Compute the lexeme (without the "0x" prefix).
+        let lexeme = String(_chars[_tokenStart + 2..._current - _tokenStart - 2])
+        
+        // Compute the value as an unsigned integer.
+        let value = Int(lexeme, radix: 16)
+        
+        // Create and add this literal as a number token.
+        _tokens.append(NumberToken(value: Double(value!), isInteger: true, start: _tokenStart, line: _lineNumber, lexeme: "0x\(lexeme)", scriptId: _scriptId))
+        
+        return true
     }
     
     /// Consumes and adds a number token starting at `_current`.
@@ -53,12 +127,12 @@ public class Tokeniser {
     /// ```
     /// Note: We allow the use of `_` as a digit separator.
     private func addNumber() throws {
-        var char: Character
-        var lexeme: [Character] = []
+        var lexemeChars: [Character] = [previous()!]
         
+        // Gather up contiguous digits and underscores. This is the integer component.
         while !atEnd() && peek().isDigitOrUnderscore() {
-            char = advance()
-            if char != "_" { lexeme.append(char) }
+            let char = advance()
+            if char != "_" { lexemeChars.append(char) }
         }
         
         // Edge case 1: Prohibit a trailing underscore.
@@ -66,55 +140,67 @@ public class Tokeniser {
             throw error(type: .unexpectedCharacter, message: "Underscores can separate digits within a number but a number cannot end with one.")
         }
         
-        // Is this a double or a whole number?
-        var isInt = false
-        if peek() == "." && peek(distance: 1).isNumber {
-            isInt = false
+        // Is this a double or an integer? Default to it being an integer.
+        var isInteger = true
+        if peek() == "." {
+            isInteger = false
             
-            // Consume the dot.
-            lexeme.append(advance())
+            // Consume the decimal point.
+            lexemeChars.append(advance())
             
+            // We must see at least one digit.
+            if !peek().isDigit() {
+                throw error(type: .syntaxError, message: "Expected a digit after the decimal point.")
+            }
+            
+            // Get the fractional component.
             while peek().isDigitOrUnderscore() {
-                char = advance()
-                if char != "_" { lexeme.append(char) }
+                let char = advance()
+                if char != "_" { lexemeChars.append(char) }
             }
             
             // Edge case 2: Prohibit a trailing underscore within a double.
             if previous() == "_" {
                 throw error(type: .unexpectedCharacter, message: "Underscores can separate digits within a number but a number cannot end with one.")
             }
-            
-            // Is there an exponent?
-            if peek() == "e" || peek() == "E" {
-                var seenExponentDigit = false
-                var nextChar = peek(distance: 1)
-                if nextChar == "-" || nextChar == "+" {
-                    if nextChar == "-" { isInt = false }
-                    // Advance twice to consume the e/E and sign character.
-                    lexeme.append(advance())
-                    lexeme.append(advance())
-                    while peek().isNumber {
-                        lexeme.append(advance())
-                        seenExponentDigit = true
-                    }
-                } else if nextChar.isNumber {
-                    // Consume the e/E character.
-                    lexeme.append(advance())
+        }
+        
+        // Is there an exponent?
+        if peek() == "e" || peek() == "E" {
+            var seenExponentDigit = false
+            let nextChar = peek(distance: 1)
+            if nextChar == "-" || nextChar == "+" {
+                if nextChar == "-" { isInteger = false }
+                // Advance twice to consume the e/E and sign character.
+                lexemeChars.append(advance())
+                lexemeChars.append(advance())
+                while peek().isDigit() {
+                    lexemeChars.append(advance())
+                    seenExponentDigit = true
+                }
+            } else if nextChar.isDigit() {
+                // Consume the e/E character.
+                lexemeChars.append(advance())
 
-                    while peek().isNumber {
-                        lexeme.append(advance())
-                        seenExponentDigit = true
-                    }
+                while peek().isDigit() {
+                    lexemeChars.append(advance())
+                    seenExponentDigit = true
                 }
-                
-                if !seenExponentDigit {
-                    throw error(type: .syntaxError, message: "Unterminated scientific notation.")
-                }
+            }
+            
+            if !seenExponentDigit {
+                throw error(type: .syntaxError, message: "Unterminated scientific notation.")
             }
         }
         
-        // TODO: Finish - need to actually add the token.
-        // Needs to be a number token which probably means we need an interface??
+        // Compute the actual value of the literal.
+        let lexeme = String(lexemeChars)
+        guard let value = Double(lexeme) else {
+            throw error(type: .syntaxError, message: "Invalid number literal: \(lexeme).")
+        }
+        
+        // Add this number token.
+        _tokens.append(NumberToken(value: value, isInteger: isInteger, start: _tokenStart, line: _lineNumber, lexeme: lexeme, scriptId: _scriptId))
     }
     
     /// Adds `token` to the internal `_tokens` array.
@@ -174,16 +260,16 @@ public class Tokeniser {
     
     /// A convenience function for returning an end of file token.
     private func makeEofToken() -> Token {
-        return Token(type: .eof, start: _chars.count, line: _lineNumber, lexeme: nil, scriptId: _scriptId)
+        return BaseToken(type: .eof, start: _chars.count, line: _lineNumber, lexeme: nil, scriptId: _scriptId)
     }
     
-    /// Returns a token of the specified type beginning at _tokenStart on the current line in the current script.
-    private func makeToken(type: TokenType, hasLexeme: Bool) -> Token {
+    /// Returns a base token of the specified type beginning at _tokenStart on the current line in the current script.
+    private func makeToken(type: TokenType, hasLexeme: Bool) -> BaseToken {
         if hasLexeme {
             let lexeme = String(_chars[_tokenStart..._current])
-            return Token(type: type, start: _tokenStart, line: _lineNumber, lexeme: lexeme, scriptId: _scriptId)
+            return BaseToken(type: type, start: _tokenStart, line: _lineNumber, lexeme: lexeme, scriptId: _scriptId)
         } else {
-            return Token(type: type, start: _tokenStart, line: _lineNumber, lexeme: nil, scriptId: _scriptId)
+            return BaseToken(type: type, start: _tokenStart, line: _lineNumber, lexeme: nil, scriptId: _scriptId)
         }
     }
     
@@ -221,7 +307,7 @@ public class Tokeniser {
                 // Maybe binary literal (e.g. 0b10).
                 if addBinaryLiteral() { return }
             } else {
-                addNumber()
+                try addNumber()
                 return
             }
         }
@@ -236,6 +322,11 @@ public class Tokeniser {
         } else {
             return nil
         }
+    }
+    
+    /// Returns `true` if the tokeniser has reached the end of the source code.
+    private func reachedEOF() -> Bool {
+        return _tokens.count > 0 && _tokens.last!.type == .eof
     }
     
     /// Resets the tokeniser's internal properties, ready to tokenise again.
@@ -319,7 +410,7 @@ public class Tokeniser {
         // Tokenise.
         repeat {
             try nextToken()
-        } while !atEnd()
+        } while !reachedEOF()
         
         // Remove the EOF token if requested.
         if !includeEOF { _ = _tokens.popLast() }
