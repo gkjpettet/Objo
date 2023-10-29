@@ -44,7 +44,7 @@ public class Tokeniser {
     /// ```
     private func addBinaryLiteral() -> Bool {
         // Move past the "b" character.
-        _ = advance()
+        eat()
         
         // Me need to see at least one binary digit.
         if !peek().isBinaryDigit() {
@@ -52,12 +52,12 @@ public class Tokeniser {
             _current -= 1
             return false
         } else {
-            _ = advance()
+            eat()
         }
         
         // Consume all contiguous binary digits.
         while peek().isBinaryDigit() {
-            _ = advance()
+            eat()
         }
         
         // The next character must not be a letter.
@@ -68,7 +68,7 @@ public class Tokeniser {
         }
         
         // Compute the lexeme (without the "0b" prefix).
-        let lexeme = String(_chars[_tokenStart + 2..._current - _tokenStart - 2])
+        let lexeme = String(_chars[_tokenStart + 2..._current - 1])
         
         // Compute the value as an unsigned integer.
         let value = Int(lexeme, radix: 2)
@@ -79,10 +79,18 @@ public class Tokeniser {
         return true
     }
     
-    // TODO: Implement
+    /// Attempts to add a hex literal token beginning at the current position.
+    /// Returns `true` if successful.
+    ///
+    /// Assumes that `_current` points to the "0" character illustrated below **and**
+    /// that the next character is definitely an "x":
+    /// ```
+    /// 0xFFA1
+    ///  ^
+    /// ```
     private func addHexLiteral() -> Bool {
         // Move past the "x" character.
-        _ = advance()
+        eat()
         
         // Me need to see at least one hex digit.
         if !peek().isHexDigit {
@@ -90,12 +98,12 @@ public class Tokeniser {
             _current -= 1
             return false
         } else {
-            _ = advance()
+            eat()
         }
         
         // Consume all contiguous hex digits.
         while peek().isHexDigit {
-            _ = advance()
+            eat()
         }
         
         // The next character must not be a letter.
@@ -106,7 +114,7 @@ public class Tokeniser {
         }
         
         // Compute the lexeme (without the "0x" prefix).
-        let lexeme = String(_chars[_tokenStart + 2..._current - _tokenStart - 2])
+        let lexeme = String(_chars[_tokenStart + 2..._current - 1])
         
         // Compute the value as an unsigned integer.
         let value = Int(lexeme, radix: 16)
@@ -135,7 +143,7 @@ public class Tokeniser {
             if char != "_" { lexemeChars.append(char) }
         }
         
-        // Edge case 1: Prohibit a trailing underscore.
+        // Edge case: Prohibit a trailing underscore.
         if previous() == "_" {
             throw error(type: .unexpectedCharacter, message: "Underscores can separate digits within a number but a number cannot end with one.")
         }
@@ -168,6 +176,8 @@ public class Tokeniser {
         // Is there an exponent?
         if peek() == "e" || peek() == "E" {
             var seenExponentDigit = false
+            // Number literals with an exponent will be integers unless the exponent is negative.
+            isInteger = true
             let nextChar = peek(distance: 1)
             if nextChar == "-" || nextChar == "+" {
                 if nextChar == "-" { isInteger = false }
@@ -248,9 +258,14 @@ public class Tokeniser {
             } else if atEnd() {
                 break
             } else {
-                _ = advance()
+                eat()
             }
         }
+    }
+    
+    /// Consumes the current character.
+    private func eat() {
+        _current += 1
     }
     
     /// Returns a lexer error of the specified type at the current position.
@@ -270,6 +285,17 @@ public class Tokeniser {
             return BaseToken(type: type, start: _tokenStart, line: _lineNumber, lexeme: lexeme, scriptId: _scriptId)
         } else {
             return BaseToken(type: type, start: _tokenStart, line: _lineNumber, lexeme: nil, scriptId: _scriptId)
+        }
+    }
+    
+    /// If the next character matches `c` then it's consumed and `true` is returned.
+    /// Otherwise it leaves the character alone and returns `false`.
+    private func match(_ c: Character) -> Bool {
+        if peek() == c {
+            eat()
+            return true
+        } else {
+            return false
         }
     }
     
@@ -312,6 +338,29 @@ public class Tokeniser {
             }
         }
         
+        // ====================================================================
+        // Single OR multiple character tokens.
+        // `c` is a character that can occur on its own or can occur in
+        // combination with one or more characters.
+        // ====================================================================
+        switch c {
+            // TODO: Add the remaining cases.
+        case "+":
+            if match("=") {
+                addToken(makeToken(type: .plusEqual, hasLexeme: true))
+                return
+            } else if match("+") {
+                addToken(makeToken(type: .plusPlus, hasLexeme: true))
+                return
+            } else {
+                addToken(makeToken(type: .plus, hasLexeme: true))
+                return
+            }
+            
+        default:
+            break
+        }
+        
         throw error(type: .unexpectedCharacter, message: "Unexpected character.")
     }
     
@@ -352,7 +401,7 @@ public class Tokeniser {
                 break whileLoop
                 
             case " ", "\t":
-                _ = advance()
+                eat()
                 
             case "#": // Comment.
                 consumeComment()
@@ -367,19 +416,19 @@ public class Tokeniser {
                 switch lastTokenType {
                 case .underscore:
                     _ = _tokens.popLast()
-                    _ =  advance()
+                    eat()
                     _lineNumber += 1
                     
                 case .comma, .lcurly, .lsquare:
                     // Omit adding an eol token. To the parser, this will appear as though the
                     // tokens before this and those following this new line are on the same line.
                     // This allows us to split map and list literals over multiple lines.
-                    _ = advance()
+                    eat()
                     _lineNumber += 1
                     
                 default:
                     addToken(makeToken(type: .endOfLine, hasLexeme: false))
-                    _ = advance()
+                    eat()
                     _lineNumber += 1
                 }
                 
@@ -387,6 +436,9 @@ public class Tokeniser {
                 break whileLoop
             }
         }
+        
+        // Update the start position of the next token.
+        _tokenStart = _current
     }
     
     /// Tokenises Objo source code into an array of tokens.

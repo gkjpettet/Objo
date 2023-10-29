@@ -14,5 +14,8 @@ public enum TokenType {
     case lcurly
     case lsquare
     case number
+    case plus
+    case plusEqual
+    case plusPlus
     case underscore
 }
