@@ -18,6 +18,24 @@ extension Character {
         self = Character(c)
     }
     
+    /// Returns `true` if this character is an ASCII letter.
+    func isASCIILetter() -> Bool {
+        if !self.isASCII { return false }
+        
+        if let ucase = self.unicodeScalars.first, (65...90).contains(ucase.value) {
+            return true
+        } else if let lcase = self.unicodeScalars.first, (97...122).contains(lcase.value) {
+            return true
+        } else {
+            return false
+        }
+    }
+    
+    /// Returns `true` if this character is an ASCII letter, digit (0-9) or the underscore.
+    func isASCIILetterDigitOrUnderscore() -> Bool {
+        return self.isDigitOrUnderscore() || self.isASCIILetter()
+    }
+    
     /// Returns `true` if this character is "0" or "1".
     func isBinaryDigit() -> Bool {
         return self == "0" || self == "1"

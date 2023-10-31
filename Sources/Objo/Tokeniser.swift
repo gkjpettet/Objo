@@ -10,6 +10,48 @@ import Foundation
 public class Tokeniser {
     // MARK: - Properties
     
+    /// A mapping of Objo's reserved words and their token type.
+    private let _reservedWords: [String : TokenType] = [
+        "and"         : .and,
+        "as"          : .as_,
+        "assert"      : .assert,
+        "breakpoint"  : .breakpoint,
+        "case"        : .case_,
+        "class"       : .class_,
+        "continue"    : .continue_,
+        "constructor" : .constructor,
+        "do"          : .do_,
+        "else"        : .else_,
+        "elseif"      : .elseif,
+        "end"         : .end,
+        "exit"        : .exit,
+        "export"      : .export,
+        "false"       : .boolean(false),
+        "for"         : .for_,
+        "foreach"     : .foreach,
+        "foreign"     : .foreign,
+        "function"    : .function,
+        "if"          : .if_,
+        "import"      : .import_,
+        "in"          : .in_,
+        "is"          : .is_,
+        "loop"        : .loop,
+        "not"         : .not,
+        "nothing"     : .nothing,
+        "or"          : .or,
+        "return"      : .return_,
+        "select"      : .select,
+        "self"        : .self_,
+        "static"      : .static_,
+        "super"       : .super_,
+        "then"        : .then,
+        "true"        : .boolean(true),
+        "until"       : .until,
+        "var"         : .var_,
+        "while"       : .while_,
+        "xor"         : .xor
+    ]
+    
     /// The individual characters of the source currently being processed.
     private var _chars: [Character] = []
     /// The 0-based index in `_chars` where the tokeniser currently is.
@@ -87,6 +129,26 @@ public class Tokeniser {
         return true
     }
     
+    /// Creates and adds a token representing either a static or instance field identifier.
+    ///
+    /// Assumes that `_current` points to the character immediately following the last `_` **and**
+    /// that this character is a letter.
+    /// Field identifiers start with a single underscore, e.g: `_width`.
+    /// Static field identifiers start with two underscores, e.g: `__version`
+    /// Identifiers can contain any combination of letters, underscores or numbers.
+    private func addFieldIdentifier(isStatic: Bool) {
+        var lexemeChars: [Character] = ["_"]
+        if isStatic { lexemeChars.append("_") }
+        
+        while peek().isASCIILetterDigitOrUnderscore() {
+            lexemeChars.append(advance())
+        }
+        
+        let type: TokenType = isStatic ? .staticFieldIdentifier : .fieldIdentifier
+        
+        _tokens.append(BaseToken(type: type, start: _tokenStart, line: _lineNumber, lexeme: String(lexemeChars), scriptId: _scriptId))
+    }
+    
     /// Attempts to add a hex literal token beginning at the current position.
     /// Returns `true` if successful.
     ///
@@ -131,6 +193,36 @@ public class Tokeniser {
         _tokens.append(NumberToken(value: Double(value!), isInteger: true, start: _tokenStart, line: _lineNumber, lexeme: "0x\(lexeme)", scriptId: _scriptId))
         
         return true
+    }
+    
+    /// Adds either a variable identifier, keyword, boolean or the nothing token.
+    ///
+    /// Assumes we've already consumed the first character:
+    ///
+    /// ```
+    /// name
+    ///  ^
+    /// ```
+    private func addIdentifierOrReservedWord() {
+        var chars: [Character] = [previous()]
+        
+        // Consume all alphanumeric characters and underscores.
+        while peek().isASCIILetterDigitOrUnderscore() {
+            chars.append(advance())
+        }
+        
+        let lexeme = String(chars)
+        
+        // Determine the token's type based on it's lexeme, defaulting to an identifier.
+        var type: TokenType = _reservedWords[lexeme, default: .identifier]
+        
+        // Objo needs to know if an identifier begins with an uppercase identifier or not.
+        if type == .identifier {
+            if lexeme.first!.isUppercase { type = .uppercaseIdentifier }
+        }
+        
+        // Add this token.
+        _tokens.append(makeToken(type: type, hasLexeme: true))
     }
     
     /// Consumes and adds a number token starting at `_current`.
@@ -387,6 +479,20 @@ public class Tokeniser {
         return LexerError(line: _lineNumber, message: message, scriptId: _scriptId, start: _tokenStart, type: type)
     }
     
+    /// Called when we encounter an underscore at the end of a line.
+    ///
+    /// Assumes that the subsequent newline character has already been consumed.
+    /// We need to advance past any spaces or tabs until we hit a non-whitespace character.
+    /// If we hit a newline or the end of the source code before we find a non-whitespace
+    /// character then we throw an error.
+    private func handleLineContinuation() throws {
+        _lineNumber += 1
+        while matchSpaceOrTab() {}
+        if atEnd() {
+            throw error(type: .syntaxError, message: "Unexpected end of source code. Expected a non-whitespace character following the line continuation operator.")
+        }
+    }
+    
     /// A convenience function for returning an end of file token.
     private func makeEofToken() -> Token {
         return BaseToken(type: .eof, start: _chars.count, line: _lineNumber, lexeme: nil, scriptId: _scriptId)
@@ -409,6 +515,18 @@ public class Tokeniser {
             eat()
             return true
         } else {
+            return false
+        }
+    }
+    
+    /// If the next character is a space or a horizontal tab then we consume it and return `true`.
+    /// Otherwise we leave the character alone and return `false`.
+    private func matchSpaceOrTab() -> Bool {
+        switch peek() {
+        case " ", "\t":
+            eat()
+            return true
+        default:
             return false
         }
     }
@@ -648,6 +766,62 @@ public class Tokeniser {
         // ====================================================================
         if c == "\"" {
             try addString()
+            return
+        }
+        
+        // ====================================================================
+        // The underscore.
+        // Underscores represent the line continuation marker if they are
+        // immediately followed by a newline or they can indicate the
+        // beginning of an identifier.
+        // ====================================================================
+        if c == "_" {
+            if match("_") {
+                if peek().isASCIILetter() {
+                    // A static field identifier (e.g. `__version`).
+                    addFieldIdentifier(isStatic: true)
+                    return
+                } else {
+                    throw error(type: .unexpectedCharacter, message: "Expected a letter after `__`.")
+                }
+            } else if peek().isASCIILetter() {
+                // A class field identifier (e.g. `_width`).
+                addFieldIdentifier(isStatic: false)
+                return
+            } else {
+                // Could be the line continuation marker.
+                // Edge case: Discard trailing whitespace between the underscore and the newline 
+                // character.
+                while matchSpaceOrTab() {}
+                
+                // Edge case: Handle a comment after the line continuation marker.
+                if match("#") {
+                    while true {
+                        if peek() == "\n" {
+                            break
+                        } else if atEnd() {
+                            break
+                        } else {
+                            eat()
+                        }
+                    }
+                }
+                
+                if match("\n") {
+                    try handleLineContinuation()
+                    return
+                } else {
+                    throw error(type: .unexpectedCharacter, message: "Expected either a letter or end of line after the line continuation marker.")
+                }
+            }
+        }
+        
+        // =================================================================
+        // Identifiers, keywords, booleans and nothing.
+        // =================================================================
+        // TODO: Implement.
+        if c.isASCIILetter() {
+            addIdentifierOrReservedWord()
             return
         }
         
