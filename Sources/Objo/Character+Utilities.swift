@@ -10,6 +10,14 @@ import Foundation
 
 extension Character {
     
+    /// Returns a new Character instance from a Unicode codepoint.
+    init?(codepoint: UInt32) {
+        guard let c = Unicode.Scalar(codepoint) else {
+            return nil
+        }
+        self = Character(c)
+    }
+    
     /// Returns `true` if this character is "0" or "1".
     func isBinaryDigit() -> Bool {
         return self == "0" || self == "1"

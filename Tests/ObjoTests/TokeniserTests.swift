@@ -18,7 +18,7 @@ final class TokeniserTests: XCTestCase {
     
     /// Expects an unexpected character error.
     func testUnexpectedCharacter() throws {
-        XCTAssertThrowsError(try tokeniser.tokenise(source: ";", scriptId: -1)) { error in
+        XCTAssertThrowsError(try tokeniser.tokenise(source: "@", scriptId: -1)) { error in
             let type = (error as? LexerError)?.type
             XCTAssertEqual(type, .unexpectedCharacter)
         }
@@ -115,5 +115,22 @@ final class TokeniserTests: XCTestCase {
         // 0b0
         let n2: NumberToken = tokens[2] as! NumberToken
         XCTAssertTrue(n2.value == 0 && n2.isInteger == true)
+    }
+    
+    func testStrings() throws {
+        let source = """
+        "hello world"
+        "\\U0001F64A\\U0001F680" # test
+        "\\u0061" # a
+        "\\u0062 \\u0063" # b c
+        """
+        let tokens = try tokeniser.tokenise(source: source, scriptId: -1)
+        
+        XCTAssertTrue(tokens.count == 9)
+        
+        XCTAssertEqual(tokens[0].lexeme, "hello world")
+        XCTAssertEqual(tokens[2].lexeme, "🙊🚀")
+        XCTAssertEqual(tokens[4].lexeme, "a")
+        XCTAssertEqual(tokens[6].lexeme, "b c")
     }
 }

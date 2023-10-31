@@ -22,10 +22,18 @@ public class Tokeniser {
     private var _scriptId: Int = -1
     /// The source currently being processed.
     private var _source: String = ""
+    /// `true` if the tokenising is in the middle of tokenising a list.
+    private var _tokenisingList = false
     /// The tokens to return.
     private var _tokens: [Token] = []
     /// The 0-based index in `_chars` that the current token starts at.
     private var _tokenStart: Int = 0
+    /// The number of unclosed curly braces.
+    private var _unclosedCurlyCount = 0
+    /// The number of unclosed parentheses.
+    private var _unclosedParenCount = 0
+    /// The number of unclosed square brackets.
+    private var _unclosedSquareCount = 0
     
     // MARK: - Public methods
     
@@ -135,7 +143,7 @@ public class Tokeniser {
     /// ```
     /// Note: We allow the use of `_` as a digit separator.
     private func addNumber() throws {
-        var lexemeChars: [Character] = [previous()!]
+        var lexemeChars: [Character] = [previous()]
         
         // Gather up contiguous digits and underscores. This is the integer component.
         while !atEnd() && peek().isDigitOrUnderscore() {
@@ -213,6 +221,89 @@ public class Tokeniser {
         _tokens.append(NumberToken(value: value, isInteger: isInteger, start: _tokenStart, line: _lineNumber, lexeme: lexeme, scriptId: _scriptId))
     }
     
+    /// Attempts to add a string literal token.
+    ///
+    /// String literals begin and end with a double quote (`"`).
+    /// They may contain >= 0 escaped double quotes (`""`).
+    /// This method assumes that the current character being evaluated is
+    /// immediately after the opening double quote:
+    /// ```
+    /// "Hello"
+    ///  ^
+    /// ```
+    ///
+    /// Objo strings can also contain Unicode characters which are represented in two ways:
+    /// 1. A `\u` followed by four hex digits can be used to specify a Unicode code point:
+    ///
+    /// ```objo
+    /// "\u0041\u0b83\u00DE" // AஃÞ
+    /// ```
+    ///
+    /// 2. A capital `\U` followed by eight hex digits allows Unicode code points outside of the basic multilingual plane:
+    ///
+    /// ```objo
+    /// "\U0001F64A\U0001F680" // 🙊🚀
+    /// ```
+    private func addString() throws {
+        var lexemeChars: [Character] = []
+        
+        // Keep consuming until we hit a `"`.
+        var terminated = false
+        var c: Character = "\0"
+        var lastChar: Character = "\0"
+    outerWhile: while !atEnd() {
+            c = advance()
+            
+            if c == "\"" {
+                // If the next character is a `"` then this is an escaped quote.
+                if match("\"") {
+                    lexemeChars.append(c)
+                    lastChar = previous()
+                    continue
+                } else {
+                    terminated = true
+                    break outerWhile
+                }
+            } else if c == "\\" && lastChar != "\\" {
+                let peekChar = peek()
+                if peekChar == "u" {
+                    // Move past `u`.
+                    eat()
+                    // Consume 4 hex digits and compute the codepoint.
+                    let codePoint: UInt32 = try consumeHexValue(digits: 4, errorType: .syntaxError)
+                    // Try to convert the codepoint to a character.
+                    guard let unicode = Character(codepoint: codePoint) else {
+                        throw error(type: .syntaxError, message: "Invalid Unicode escape sequence.")
+                    }
+                    lexemeChars.append(unicode)
+                } else if peekChar == "U" {
+                    // Move past `u`.
+                    eat()
+                    // Consume 8 hex digits and compute the codepoint.
+                    let codePoint: UInt32 = try consumeHexValue(digits: 8, errorType: .syntaxError)
+                    // Try to convert the codepoint to a character.
+                    guard let unicode = Character(codepoint: codePoint) else {
+                        throw error(type: .syntaxError, message: "Invalid Unicode escape sequence.")
+                    }
+                    lexemeChars.append(unicode)
+                }
+            } else if c == "\n" {
+                break outerWhile
+            } else {
+                lexemeChars.append(c)
+            }
+            lastChar = previous()
+        }
+        
+        // Make sure the literal was terminated.
+        if !terminated {
+            throw error(type: .syntaxError, message: "Unterminated string literal. Expected a closing double quote.")
+        }
+        
+        // Add this string token.
+        _tokens.append(BaseToken(type: .string, start: _tokenStart, line: _lineNumber, lexeme: String(lexemeChars), scriptId: _scriptId))
+    }
+    
     /// Adds `token` to the internal `_tokens` array.
     /// Handles end of line tokens.
     private func addToken(_ token: Token) {
@@ -252,8 +343,8 @@ public class Tokeniser {
     /// Assumes we're at the beginning of a comment (i.e. have just consumed the `#`).
     private func consumeComment() {
         while true {
-            if peek() == "\0" {
-                addToken(makeToken(type: .endOfLine, hasLexeme: false))
+            if peek() == "\n" {
+                addToken(makeToken(type: .endOfLine))
                 break
             } else if atEnd() {
                 break
@@ -261,6 +352,29 @@ public class Tokeniser {
                 eat()
             }
         }
+    }
+    
+    /// Consumes the specified number of contiguous hex digits. Throws if unable to consume
+    /// the required number.
+    private func consumeHexValue(digits: Int, errorType: LexerError.ErrorType) throws -> UInt32 {
+        let message = "Expected \(digits) hex digits."
+        
+        guard digits > 0 else {
+            throw error(type: errorType, message: message)
+        }
+        
+        // Get the required hex characters.
+        var chars: [Character] = []
+        for _ in 1...digits {
+            if !peek().isHexDigit {
+                throw error(type: errorType, message: message)
+            } else {
+                chars.append(advance())
+            }
+        }
+        
+        // Convert the hex characters into an integer.
+        return UInt32(String(chars), radix: 16)!
     }
     
     /// Consumes the current character.
@@ -279,7 +393,7 @@ public class Tokeniser {
     }
     
     /// Returns a base token of the specified type beginning at _tokenStart on the current line in the current script.
-    private func makeToken(type: TokenType, hasLexeme: Bool) -> BaseToken {
+    private func makeToken(type: TokenType, hasLexeme: Bool = false) -> BaseToken {
         if hasLexeme {
             let lexeme = String(_chars[_tokenStart..._current])
             return BaseToken(type: type, start: _tokenStart, line: _lineNumber, lexeme: lexeme, scriptId: _scriptId)
@@ -314,8 +428,8 @@ public class Tokeniser {
         
         // Have we reached the end of the source code?
         if atEnd() {
-            addToken(makeToken(type: .endOfLine, hasLexeme: false))
-            addToken(makeToken(type: .eof, hasLexeme: false))
+            addToken(makeToken(type: .endOfLine))
+            addToken(makeToken(type: .eof))
             return
         }
         
@@ -339,12 +453,123 @@ public class Tokeniser {
         }
         
         // ====================================================================
+        // Single character tokens.
+        // ====================================================================
+        switch c {
+        case "(":
+            addToken(makeToken(type: .lparen))
+            _unclosedParenCount += 1
+            return
+            
+        case ")":
+            addToken(makeToken(type: .rparen))
+            _unclosedParenCount -= 1
+            if _unclosedParenCount < 0 {
+                throw error(type: .syntaxError, message: "Unmatched closing parenthesis.")
+            }
+            return
+            
+        case "{":
+            addToken(makeToken(type: .lcurly))
+            _unclosedCurlyCount += 1
+            return
+            
+        case "}":
+            addToken(makeToken(type: .rcurly))
+            _unclosedCurlyCount -= 1
+            if _unclosedCurlyCount < 0 {
+                throw error(type: .syntaxError, message: "Unmatched closing curly bracket.")
+            }
+            return
+            
+        case "[":
+            addToken(makeToken(type: .lsquare))
+            _unclosedSquareCount += 1
+            _tokenisingList = true
+            return
+            
+        case "]":
+            addToken(makeToken(type: .rsquare))
+            _unclosedSquareCount -= 1
+            if _unclosedSquareCount < 0 {
+                throw error(type: .syntaxError, message: "Unmatched closing square bracket.")
+            }
+            if _unclosedSquareCount == 0 { _tokenisingList = false }
+            return
+            
+        case ",":
+            addToken(makeToken(type: .comma))
+            return
+            
+        case "&":
+            addToken(makeToken(type: .ampersand))
+            return
+            
+        case "|":
+            addToken(makeToken(type: .pipe))
+            return
+            
+        case "^":
+            addToken(makeToken(type: .caret))
+            return
+            
+        case "~":
+            addToken(makeToken(type: .tilde))
+            return
+            
+        case ":":
+            addToken(makeToken(type: .colon))
+            return
+            
+        case ";":
+            addToken(makeToken(type: .semicolon))
+            return
+            
+        case "?":
+            addToken(makeToken(type: .query))
+            return
+            
+        case "%":
+            addToken(makeToken(type: .percent))
+            return
+            
+        default:
+            break
+        }
+        
+        // ====================================================================
         // Single OR multiple character tokens.
         // `c` is a character that can occur on its own or can occur in
         // combination with one or more characters.
         // ====================================================================
         switch c {
-            // TODO: Add the remaining cases.
+        case "=":
+            if match("=") {
+                addToken(makeToken(type: .equalEqual))
+                return
+            } else {
+                addToken(makeToken(type: .equal))
+                return
+            }
+            
+        case ".":
+            if match(".") {
+                if match(".") {
+                    addToken(makeToken(type: .dotDotDot))
+                    return
+                } else {
+                    if match("<") {
+                        addToken(makeToken(type: .dotDotLess))
+                        return
+                    } else {
+                        throw error(type: .unexpectedCharacter, message: "Unknown operator `..`.")
+                    }
+                }
+            } else {
+                addToken(makeToken(type: .dot))
+                return
+            }
+            
         case "+":
             if match("=") {
                 addToken(makeToken(type: .plusEqual, hasLexeme: true))
@@ -357,19 +582,85 @@ public class Tokeniser {
                 return
             }
             
+        case "-":
+            if match("=") {
+                addToken(makeToken(type: .minusEqual, hasLexeme: true))
+                return
+            } else if match("-") {
+                addToken(makeToken(type: .minusMinus, hasLexeme: true))
+                return
+            } else {
+                addToken(makeToken(type: .minus, hasLexeme: true))
+                return
+            }
+            
+        case "*":
+            if match("=") {
+                addToken(makeToken(type: .starEqual))
+                return
+            } else {
+                addToken(makeToken(type: .star))
+                return
+            }
+            
+        case "/":
+            if match("=") {
+                addToken(makeToken(type: .forwardSlashEqual))
+                return
+            } else {
+                addToken(makeToken(type: .forwardSlash))
+                return
+            }
+            
+        case "<":
+            if match(">") {
+                addToken(makeToken(type: .notEqual))
+                return
+            } else if match("=") {
+                addToken(makeToken(type: .lessEqual))
+                return
+            } else if match("<") {
+                addToken(makeToken(type: .lessLess))
+                return
+            } else {
+                addToken(makeToken(type: .less))
+                return
+            }
+            
+        case ">":
+            if match("=") {
+                addToken(makeToken(type: .greaterEqual))
+                return
+            } else if match(">") {
+                addToken(makeToken(type: .greaterGreater))
+                return
+            } else {
+                addToken(makeToken(type: .greater))
+                return
+            }
+            
         default:
             break
+        }
+        
+        // ====================================================================
+        // Strings.
+        // ====================================================================
+        if c == "\"" {
+            try addString()
+            return
         }
         
         throw error(type: .unexpectedCharacter, message: "Unexpected character.")
     }
     
-    /// Returns the previously consumed character or nil if this is the first character.
-    private func previous() -> Character? {
+    /// Returns the previously consumed character or the null character (\0) if this is
+    /// the first character.
+    private func previous() -> Character {
         if _current - 1 >= 0 {
             return _chars[_current - 1]
         } else {
-            return nil
+            return "\0"
         }
     }
     
@@ -386,8 +677,12 @@ public class Tokeniser {
         _previousCharacter = nil
         _scriptId = -1
         _source = ""
+        _tokenisingList = false
         _tokenStart = 0
         _tokens = []
+        _unclosedCurlyCount = 0
+        _unclosedParenCount = 0
+        _unclosedSquareCount = 0
     }
     
     /// Advances past whitespace.
@@ -427,7 +722,7 @@ public class Tokeniser {
                     _lineNumber += 1
                     
                 default:
-                    addToken(makeToken(type: .endOfLine, hasLexeme: false))
+                    addToken(makeToken(type: .endOfLine))
                     eat()
                     _lineNumber += 1
                 }
