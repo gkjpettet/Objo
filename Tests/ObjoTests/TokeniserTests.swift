@@ -16,14 +16,6 @@ final class TokeniserTests: XCTestCase {
         XCTAssert(!tokens.isEmpty && tokens.last!.type == .eof)
     }
     
-    /// Expects an unexpected character error.
-    func testUnexpectedCharacter() throws {
-        XCTAssertThrowsError(try tokeniser.tokenise(source: "@", scriptId: -1)) { error in
-            let type = (error as? LexerError)?.type
-            XCTAssertEqual(type, .unexpectedCharacter)
-        }
-    }
-    
     /// Resetting the tokeniser should not affect the returned Token array.
     func testReturnedTokensAreIndependent() throws {
         let tokens = try tokeniser.tokenise(source: "1 2 3", scriptId: -1)
@@ -34,6 +26,38 @@ final class TokeniserTests: XCTestCase {
         tokeniser.reset()
         
         XCTAssertTrue(tokens.count == 5)
+    }
+    
+    /// Tests binary literal tokenising.
+    func testBinaryLiterals() throws {
+        let source = "0b1001 + 0b0"
+        let tokens = try tokeniser.tokenise(source: source, scriptId: -1)
+        
+        XCTAssertTrue(tokens.count == 5)
+        
+        // 0b1001
+        let n1: NumberToken = tokens[0] as! NumberToken
+        XCTAssertTrue(n1.value == 9 && n1.isInteger == true)
+        
+        // 0b0
+        let n2: NumberToken = tokens[2] as! NumberToken
+        XCTAssertTrue(n2.value == 0 && n2.isInteger == true)
+    }
+    
+    /// Tests hex literal tokenising.
+    func testHexLiterals() throws {
+        let source = "0xFF + 0xABC78"
+        let tokens = try tokeniser.tokenise(source: source, scriptId: -1)
+        
+        XCTAssertTrue(tokens.count == 5)
+        
+        // 0xFF
+        let n1: NumberToken = tokens[0] as! NumberToken
+        XCTAssertTrue(n1.value == 255 && n1.isInteger == true)
+        
+        // 0xABC78
+        let n2: NumberToken = tokens[2] as! NumberToken
+        XCTAssertTrue(n2.value == 703608 && n2.isInteger == true)
     }
     
     /// Tests a mixture of integers, decimal numbers and numbers with exponents.
@@ -85,39 +109,8 @@ final class TokeniserTests: XCTestCase {
         XCTAssertTrue(n10.value == 0 && n10.isInteger == true)
     }
     
-    /// Tests hex literal tokenising.
-    func testHexLiterals() throws {
-        let source = "0xFF + 0xABC78"
-        let tokens = try tokeniser.tokenise(source: source, scriptId: -1)
-        
-        XCTAssertTrue(tokens.count == 5)
-        
-        // 0xFF
-        let n1: NumberToken = tokens[0] as! NumberToken
-        XCTAssertTrue(n1.value == 255 && n1.isInteger == true)
-        
-        // 0xABC78
-        let n2: NumberToken = tokens[2] as! NumberToken
-        XCTAssertTrue(n2.value == 703608 && n2.isInteger == true)
-    }
-    
-    /// Tests binary literal tokenising.
-    func testBinaryLiterals() throws {
-        let source = "0b1001 + 0b0"
-        let tokens = try tokeniser.tokenise(source: source, scriptId: -1)
-        
-        XCTAssertTrue(tokens.count == 5)
-        
-        // 0b1001
-        let n1: NumberToken = tokens[0] as! NumberToken
-        XCTAssertTrue(n1.value == 9 && n1.isInteger == true)
-        
-        // 0b0
-        let n2: NumberToken = tokens[2] as! NumberToken
-        XCTAssertTrue(n2.value == 0 && n2.isInteger == true)
-    }
-    
-    func testStrings() throws {
+    /// Tests valid strings.
+    func testValidStrings() throws {
         let source = """
         "hello world"
         "\\U0001F64A\\U0001F680" # test
@@ -132,5 +125,24 @@ final class TokeniserTests: XCTestCase {
         XCTAssertEqual(tokens[2].lexeme, "🙊🚀")
         XCTAssertEqual(tokens[4].lexeme, "a")
         XCTAssertEqual(tokens[6].lexeme, "b c")
+    }
+    
+    func testUnterminatedStringLiteral() throws {
+        let source = """
+        1 + 2
+        "hello
+        """
+        XCTAssertThrowsError(try tokeniser.tokenise(source: source, scriptId: -1)) { error in
+            let type = (error as? LexerError)?.type
+            XCTAssertEqual(type, .syntaxError)
+        }
+    }
+    
+    /// Expects an unexpected character error.
+    func testUnexpectedCharacter() throws {
+        XCTAssertThrowsError(try tokeniser.tokenise(source: "@", scriptId: -1)) { error in
+            let type = (error as? LexerError)?.type
+            XCTAssertEqual(type, .unexpectedCharacter)
+        }
     }
 }
