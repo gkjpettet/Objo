@@ -272,7 +272,6 @@ public class Parser {
     ///
     /// `terminator` is the token that is required to occur after the declaration to be valid.
     private func expressionStatement(terminator: TokenType = .endOfLine) throws -> ExpressionStmt {
-        // TODO
         ditch(.endOfLine)
         
         // Store the location of the start of the expression.
