@@ -60,6 +60,8 @@ public class Parser {
     
     // MARK: - Public methods
     
+    public init() {}
+    
     /// Parses an array of tokens into an abstract syntax tree.
     public func parse(tokens: [Token]) throws -> [Stmt] {
         reset()
