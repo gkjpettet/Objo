@@ -7,7 +7,7 @@
 
 import Foundation
 
-public enum TokenType: Equatable {
+public enum TokenType: Equatable, Hashable {
     case and
     case ampersand
     case as_

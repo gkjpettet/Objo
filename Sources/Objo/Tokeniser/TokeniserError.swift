@@ -1,13 +1,13 @@
 //
-//  LexerError.swift
-//  
+//  TokeniserError.swift
+//
 //
 //  Created by Garry Pettet on 24/10/2023.
 //
 
 import Foundation
 
-public struct LexerError: Error {
+public struct TokeniserError: Error {
     public enum ErrorType {
         case syntaxError
         case unexpectedCharacter

@@ -448,7 +448,7 @@ public class Tokeniser {
     
     /// Consumes the specified number of contiguous hex digits. Throws if unable to consume
     /// the required number.
-    private func consumeHexValue(digits: Int, errorType: LexerError.ErrorType) throws -> UInt32 {
+    private func consumeHexValue(digits: Int, errorType: TokeniserError.ErrorType) throws -> UInt32 {
         let message = "Expected \(digits) hex digits."
         
         guard digits > 0 else {
@@ -474,9 +474,9 @@ public class Tokeniser {
         _current += 1
     }
     
-    /// Returns a lexer error of the specified type at the current position.
-    private func error(type: LexerError.ErrorType, message: String) -> LexerError {
-        return LexerError(line: _lineNumber, message: message, scriptId: _scriptId, start: _tokenStart, type: type)
+    /// Returns a tokeniser error of the specified type at the current position.
+    private func error(type: TokeniserError.ErrorType, message: String) -> TokeniserError {
+        return TokeniserError(line: _lineNumber, message: message, scriptId: _scriptId, start: _tokenStart, type: type)
     }
     
     /// Called when we encounter an underscore at the end of a line.
