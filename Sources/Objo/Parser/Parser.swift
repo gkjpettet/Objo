@@ -63,7 +63,7 @@ public class Parser {
     public init() {}
     
     /// Parses an array of tokens into an abstract syntax tree.
-    public func parse(tokens: [Token]) throws -> [Stmt] {
+    public func parse(tokens: [Token]) -> [Stmt] {
         reset()
 
         _tokens = tokens
@@ -79,6 +79,9 @@ public class Parser {
                 _ = match(.endOfLine)
             } catch let error as ParserError {
                 panic(error)
+            } catch {
+                // Unrecoverable error. Return the AST in its current state.
+                return _ast
             }
         }
 
