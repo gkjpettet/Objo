@@ -20,7 +20,7 @@ public struct FieldParselet: PrefixParselet {
             if isStatic {
                 return StaticFieldAssignmentExpr(identifier: identifier, value: try parser.expression())
             } else {
-                return FieldAssignmentExpr(identifer: identifier, value: try parser.expression())
+                return FieldAssignmentExpr(identifier: identifier, value: try parser.expression())
             }
             
         } else if canAssign && parser.match(.plusEqual, .minusEqual, .starEqual, .forwardSlashEqual) {
@@ -30,9 +30,9 @@ public struct FieldParselet: PrefixParselet {
             // This is a compound assignment to the field named `identifier.lexeme`.
             let expression = try parser.expression()
             if isStatic {
-                return try compoundAssign(parser: parser, assignee: StaticFieldExpr(identifier: identifier), expression: expression, op: op, true)
+                return try compoundAssign(parser: parser, assignee: StaticFieldExpr(identifier: identifier), expression: expression, op: op, isStatic: true)
             } else {
-                return try compoundAssign(parser: parser, assignee: FieldExpr(identifier: identifier), expression: expression, op: op, false)
+                return try compoundAssign(parser: parser, assignee: FieldExpr(identifier: identifier), expression: expression, op: op, isStatic: false)
             }
             
         } else {
@@ -80,6 +80,7 @@ public struct FieldParselet: PrefixParselet {
             
         default:
             try parser.error(message: "Unsupported field compound assignment operator: `\(op)`.")
+            opType = .error // HACK: We should never reach here but I don't want to return an optional
         }
         
         let binOp = BaseToken(type: opType, start: op.start, line: op.line, lexeme: nil, scriptId: op.scriptId)
@@ -89,9 +90,9 @@ public struct FieldParselet: PrefixParselet {
         
         // Return a new assignment expression.
         if isStatic {
-            StaticFieldAssignmentExpr(identifier: assignee.location, value: bin)
+            return StaticFieldAssignmentExpr(identifier: assignee.location, value: bin)
         } else {
-            FieldAssignmentExpr(identifier: assignee.location, value: bin)
+            return FieldAssignmentExpr(identifier: assignee.location, value: bin)
         }
     }
 }

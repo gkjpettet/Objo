@@ -30,6 +30,7 @@ public enum TokenType: Equatable, Hashable {
     case endOfLine
     case equal
     case equalEqual
+    case error // Special use case
     case exit
     case export
     case fieldIdentifier

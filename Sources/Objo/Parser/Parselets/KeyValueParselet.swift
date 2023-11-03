@@ -15,6 +15,6 @@ public struct KeyValueParselet: InfixParselet {
         
         let right = try parser.expression()
         
-        return KeyValueExpr(colon: colon, key: Expr, value: Expr)
+        return KeyValueExpr(colon: colon, key: left, value: right)
     }
 }

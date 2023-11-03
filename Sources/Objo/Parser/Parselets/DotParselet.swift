@@ -24,9 +24,9 @@ public struct DotParselet: InfixParselet {
             arguments.append(try parser.expression())
         } else if parser.match(.lparen) {
             if !parser.check(.rparen) {
-                while true {
+                repeat {
                     arguments.append(try parser.expression())
-                }
+                } while !parser.match(.comma)
             }
             try parser.consume(.rparen, message: "Expected a closing parenthesis after the method call's arguments.")
         }

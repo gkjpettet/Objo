@@ -65,7 +65,17 @@ public class Parser {
         .equalEqual         : binaryOperator(precedence: .equality),
         .exit               : unused(),
         .export             : unused(),
-        .fieldIdentifier    : prefix(parselet: FieldParselet())
+        .fieldIdentifier    : prefix(parselet: FieldParselet()),
+        .foreign            : unused(),
+        .forwardSlash       : binaryOperator(precedence: .factor),
+        .forwardSlashEqual  : unused(),
+        .for_               : unused(),
+        .foreach            : unused(),
+        .function           : unused(),
+        .greater            : binaryOperator(precedence: .comparison),
+        .greaterEqual       : binaryOperator(precedence: .comparison),
+        .greaterGreater     : binaryOperator(precedence: .bitwiseShift),
+        .identifier         : prefix(parselet: VariableParselet())
         ]
     
     // MARK: - Static methods
