@@ -16,5 +16,5 @@ import Foundation
 
 public protocol InfixParselet {
     /// Parses an expression occurring after the provided `left` operand. Assumes the infix token has just been consumed by the parser.
-    func parse(parser: Parser, left: Expr, canAssign: Bool) -> Expr
+    func parse(parser: Parser, left: Expr, canAssign: Bool) throws -> Expr
 }

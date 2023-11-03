@@ -8,6 +8,13 @@
 import Foundation
 
 public protocol ExprVisitor {
-    /// The visitor is visiting a nothing literal.
+    func visitBinary(expr: BinaryExpr)
+    func visitBoolean(expr: BooleanLiteral)
+    func visitKeyValue(expr: KeyValueExpr)
+    func visitLogical(expr: LogicalExpr)
+    func visitMethodInvocation(expr: MethodInvocationExpr)
     func visitNothing(expr: NothingLiteral)
+    func visitNumber(expr: NumberLiteral)
+    func visitRange(expr: RangeExpr)
+    func visitString(expr: StringLiteral)
 }

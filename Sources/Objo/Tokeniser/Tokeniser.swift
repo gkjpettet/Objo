@@ -22,11 +22,9 @@ public class Tokeniser {
         "constructor" : .constructor,
         "do"          : .do_,
         "else"        : .else_,
-        "elseif"      : .elseif,
-        "end"         : .end,
         "exit"        : .exit,
         "export"      : .export,
-        "false"       : .boolean(false),
+        "false"       : .boolean,
         "for"         : .for_,
         "foreach"     : .foreach,
         "foreign"     : .foreign,
@@ -45,7 +43,7 @@ public class Tokeniser {
         "static"      : .static_,
         "super"       : .super_,
         "then"        : .then,
-        "true"        : .boolean(true),
+        "true"        : .boolean,
         "until"       : .until,
         "var"         : .var_,
         "while"       : .while_,
@@ -216,13 +214,19 @@ public class Tokeniser {
         // Determine the token's type based on it's lexeme, defaulting to an identifier.
         var type: TokenType = _reservedWords[lexeme, default: .identifier]
         
-        // Objo needs to know if an identifier begins with an uppercase identifier or not.
-        if type == .identifier {
-            if lexeme.first!.isUppercase { type = .uppercaseIdentifier }
+        switch type {
+        case .boolean:
+            _tokens.append(BooleanToken(value: Bool(lexeme)!, start: _tokenStart, line: _lineNumber, lexeme: lexeme, scriptId: _scriptId))
+            
+        default:
+            // Objo needs to know if an identifier begins with an uppercase identifier or not.
+            if type == .identifier {
+                if lexeme.first!.isUppercase { type = .uppercaseIdentifier }
+            }
+            
+            // Add this token.
+            _tokens.append(makeToken(type: type, hasLexeme: true))
         }
-        
-        // Add this token.
-        _tokens.append(makeToken(type: type, hasLexeme: true))
     }
     
     /// Consumes and adds a number token starting at `_current`.

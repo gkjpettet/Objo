@@ -15,9 +15,9 @@ public struct GrammarRule {
     /// The parselet to use for a prefix expression starting with this rule's token.
     public let prefix: PrefixParselet?
     
-    public init(infix: InfixParselet?, precedence: Parser.Precedence, prefix: PrefixParselet?) {
+    public init(prefix: PrefixParselet?, infix: InfixParselet?, precedence: Parser.Precedence) {
+        self.prefix = prefix
         self.infix = infix
         self.precedence = precedence
-        self.prefix = prefix
     }
 }

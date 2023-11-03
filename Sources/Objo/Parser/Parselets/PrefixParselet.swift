@@ -12,5 +12,5 @@ import Foundation
 
 public protocol PrefixParselet {
     /// Parses a prefix expression. Assumes the prefix token has just been consumed by the `parser` when this method is called.
-    func parse(parser: Parser, canAssign: Bool) -> Expr
+    func parse(parser: Parser, canAssign: Bool) throws -> Expr
 }

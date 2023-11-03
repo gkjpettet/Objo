@@ -12,7 +12,7 @@ public enum TokenType: Equatable, Hashable {
     case ampersand
     case as_
     case assert
-    case boolean(Bool)
+    case boolean
     case breakpoint
     case caret
     case case_
@@ -26,9 +26,7 @@ public enum TokenType: Equatable, Hashable {
     case dotDotDot
     case dotDotLess
     case else_
-    case elseif
     case eof
-    case end
     case endOfLine
     case equal
     case equalEqual

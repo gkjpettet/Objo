@@ -41,7 +41,54 @@ public class Parser {
     // MARK: - Static properties
     
     /// Objo's grammar rules.
-    public static let rules: [TokenType : GrammarRule] = [:]
+    public static let rules: [TokenType : GrammarRule] = [
+        // TODO: Finish all token types.
+        .ampersand          : binaryOperator(precedence: .bitwiseAnd),
+        .and                : logicalOperator(precedence: .logicalAnd),
+        .assert             : unused(),
+        .as_                : unused(),
+        .boolean            : prefix(parselet: LiteralParselet()),
+        .breakpoint         : unused(),
+        .caret              : binaryOperator(precedence: .bitwiseXor),
+        .class_             : unused(),
+        .colon              : GrammarRule(prefix: nil, infix: KeyValueParselet(), precedence: .range),
+        .comma              : unused(),
+        .constructor        : unused(),
+        .continue_          : unused(),
+        .dot                : GrammarRule(prefix: nil, infix: DotParselet(), precedence: .call),
+        .dotDotLess         : GrammarRule(prefix: nil, infix: RangeParselet(), precedence: .range),
+        .dotDotDot          : GrammarRule(prefix: nil, infix: RangeParselet(), precedence: .range),
+        .else_              : unused(),
+        .eof                : unused(),
+        .endOfLine          : unused(),
+        .equal              : unused(),
+        .equalEqual         : binaryOperator(precedence: .equality),
+        .exit               : unused(),
+        .export             : unused(),
+        .fieldIdentifier    : prefix(parselet: FieldParselet())
+        ]
+    
+    // MARK: - Static methods
+    
+    /// A convenience method for returning a new grammar rule for a binary operator.
+    private static func binaryOperator(precedence: Precedence, rightAssociative: Bool = false) -> GrammarRule {
+        return GrammarRule(prefix: nil, infix: BinaryParselet(precedence: precedence, rightAssociative: rightAssociative), precedence: precedence)
+    }
+    
+    /// A convenience method for returning a new grammar rule for a logical operator.
+    private static func logicalOperator(precedence: Precedence) -> GrammarRule {
+        return GrammarRule(prefix: nil, infix: LogicalParselet(precedence: precedence), precedence: precedence)
+    }
+    
+    /// A convenience method for returning a new grammar rule for a prefix operator with the `.none` precedence.
+    private static func prefix(parselet: PrefixParselet) -> GrammarRule {
+        return GrammarRule(prefix: parselet, infix: nil, precedence: .none)
+    }
+    
+    /// A convenience method for returning a new GrammarRule that is unused.
+    private static func unused() -> GrammarRule {
+        return GrammarRule(prefix: nil, infix: nil, precedence: .none)
+    }
     
     // MARK: - Instance properties
     
@@ -61,6 +108,106 @@ public class Parser {
     // MARK: - Public methods
     
     public init() {}
+    
+    /// Parses an expression.
+    /// Public so parselets can access.
+    public func expression() throws -> Expr {
+        return try parsePrecedence(.lowest)
+    }
+    
+    /// Returns `true` if the current token matches the specified type.
+    /// Similar to `match()` but does **not** consume the current token if there is a match.
+    ///
+    /// Public so parselets can access it.
+    public func check(_ type: TokenType) -> Bool {
+        if _current?.type == type { return true }
+        return false
+    }
+
+    /// Returns `true` if the current token matches any of the specified types.
+    /// Similar to `match()` but does **not** consume the current token if there is a match.
+    ///
+    /// Public so parselets can access it.
+    public func check(_ types: TokenType...) -> Bool {
+        for type in types {
+            if _current?.type == type { return true }
+        }
+        return false
+    }
+    
+    /// If the current token matches `expected` then it's consumed.
+    /// If not, we thorw an error with `message`.
+    ///
+    /// Public so parselets can access it.
+    public func consume(_ expected: TokenType, message: String? = nil) throws {
+        guard let current = _current else {
+            throw ParserError(message: "Expected \(expected) but got an internal nil error instead.", location: nil)
+        }
+        
+        if current.type != expected {
+            throw ParserError(message: message ?? "Expected \(expected) but got \(current.type) instead.", location: current)
+        } else {
+            advance()
+        }
+    }
+    
+    /// If the current token matches any of the types in `expected` then it's consumed.
+    /// If not, we throw an error with `message`.
+    ///
+    /// Public so parselets can access it.
+    public func consume(_ expected: TokenType..., message: String? = nil) throws {
+        guard let current = _current else {
+            throw ParserError(message: "Internal nil value of the current token in the parser.", location: nil)
+        }
+        
+        for type in expected {
+            if type == current.type {
+                advance()
+                return
+            }
+        }
+        
+        throw ParserError(message: message ?? "Unexpected \(current.type) token.", location: current)
+    }
+    
+    /// Raises a `ParserError` at the current location. If the error is not at the current location,
+    /// `location` may be passed instead.
+    public func error(message: String, location: Token? = nil) throws {
+        throw ParserError(message: message, location: location ?? _current)
+    }
+    
+    /// If the current token matches any of the types in `expected` then it's consumed and returned.
+    /// If not, we throw an error with `message`.
+    ///
+    /// Public access so parselets can access it.
+    public func fetch(_ expected: TokenType..., message: String? = nil) throws -> Token {
+        guard let current = _current else {
+            throw ParserError(message: "Internal nil value of the current token in the parser.", location: nil)
+        }
+        
+        for type in expected {
+            if type == current.type {
+                advance()
+                return _previous!
+            }
+        }
+        
+        throw ParserError(message: message ?? "Unexpected \(current.type) token.", location: current)
+    }
+    
+    /// If the current token matches any of the specified types it is consumed and
+    /// the function returns `true`. Otherwise it just returns `false`.
+    ///
+    /// Public so parselets can access it.
+    public func match(_ types: TokenType...) -> Bool {
+        for type in types {
+            if check(type) {
+                advance()
+                return true
+            }
+        }
+        return false
+    }
     
     /// Parses an array of tokens into an abstract syntax tree.
     public func parse(tokens: [Token]) -> [Stmt] {
@@ -112,7 +259,7 @@ public class Parser {
         // If so, it will parse the "=" itself and handle it appropriately.
         let canAssign = precedence <= .conditional
         
-        var left = prefix.parse(parser: self, canAssign: canAssign)
+        var left = try prefix.parse(parser: self, canAssign: canAssign)
         
         // Get the precedence of the rule for the current token, defaulting to none if this token has no rule defined.
         var rulePrecedence: Precedence = getRule(type: _current!.type) == nil ? .none : getRule(type: _current!.type)!.precedence
@@ -127,7 +274,7 @@ public class Parser {
             }
             
             // Parse the left hand expression.
-            left = infix.parse(parser: self, left: left, canAssign: canAssign)
+            left = try infix.parse(parser: self, left: left, canAssign: canAssign)
             
             // Since the current token has changed, get the grammar rule for it.
             let rule = getRule(type: _current!.type)
@@ -141,6 +288,11 @@ public class Parser {
         }
         
         return left
+    }
+    
+    /// Returns the previously evaluated token.
+    public func previous() -> Token? {
+        return _previous
     }
     
     public func reset() {
@@ -190,53 +342,6 @@ public class Parser {
         return _currentIndex >= _tokens.count || _current?.type == .eof
     }
     
-    /// Returns `true` if the current token matches the specified type.
-    /// Similar to `match()` but does **not** consume the current token if there is a match.
-    private func check(_ type: TokenType) -> Bool {
-        if _current?.type == type { return true }
-        return false
-    }
-
-    /// Returns `true` if the current token matches any of the specified types.
-    /// Similar to `match()` but does **not** consume the current token if there is a match.
-    private func check(_ types: TokenType...) -> Bool {
-        for type in types {
-            if _current?.type == type { return true }
-        }
-        return false
-    }
-
-    /// If the current token matches `expected` then it's consumed.
-    /// If not, we thorw an error with `message`.
-    private func consume(_ expected: TokenType, message: String? = nil) throws {
-        guard let current = _current else {
-            throw ParserError(message: "Expected \(expected) but got an internal nil error instead.", location: nil)
-        }
-        
-        if current.type != expected {
-            throw ParserError(message: message ?? "Expected \(expected) but got \(current.type) instead.", location: current)
-        } else {
-            advance()
-        }
-    }
-    
-    /// If the current token matches any of the types in `expected` then it's consumed.
-    /// If not, we throw an error with `message`.
-    private func consume(_ expected: TokenType..., message: String? = nil) throws {
-        guard let current = _current else {
-            throw ParserError(message: "Internal nil value of the current token in the parser.", location: nil)
-        }
-        
-        for type in expected {
-            if type == current.type {
-                advance()
-                return
-            }
-        }
-        
-        throw ParserError(message: message ?? "Unexpected \(current.type) token.", location: current)
-    }
-    
     /// Parses a declaration into a `Stmt`.
     ///
     /// An Objo program is a series of statements. Statements produce a side effect.
@@ -267,11 +372,6 @@ public class Parser {
         }
     }
     
-    /// Parses an expression.
-    private func expression() throws -> Expr {
-        return try parsePrecedence(.lowest)
-    }
-    
     /// Parses an expression and wraps it up inside a statement.
     /// `terminator` will be consumed.
     ///
@@ -300,38 +400,9 @@ public class Parser {
         return ExpressionStmt(expression: expr, location: location)
     }
     
-    /// If the current token matches any of the types in `expected` then it's consumed and returned.
-    /// If not, we throw an error with `message`.
-    private func fetch(_ expected: TokenType..., message: String? = nil) throws -> Token {
-        guard let current = _current else {
-            throw ParserError(message: "Internal nil value of the current token in the parser.", location: nil)
-        }
-        
-        for type in expected {
-            if type == current.type {
-                advance()
-                return _previous!
-            }
-        }
-        
-        throw ParserError(message: message ?? "Unexpected \(current.type) token.", location: current)
-    }
-    
     /// Returns the grammar rule (if one exists) for the passed token.
     private func getRule(type: TokenType) -> GrammarRule? {
         return Parser.rules[type]
-    }
-
-    /// If the current token matches any of the specified types it is consumed and
-    /// the function returns `true`. Otherwise it just returns `false`.
-    private func match(_ types: TokenType...) -> Bool {
-        for type in types {
-            if check(type) {
-                advance()
-                return true
-            }
-        }
-        return false
     }
 
     /// Puts the parser into panic mode.
@@ -400,7 +471,7 @@ public class Parser {
         let identifier = try fetch(.identifier, message: "Expected a variable name. Remember, variable names must begin with a lowercase letter.")
         
         // Has an initialiser optionally been specified?
-        var initialiser: Expr = NothingLiteral(location: varLocation)
+        var initialiser: Expr = NothingLiteral(token: varLocation)
         if match(.equal) { initialiser = try expression() }
         
         // Most variable declarations expect a new line after them but some (such as within a

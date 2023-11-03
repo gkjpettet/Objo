@@ -15,7 +15,7 @@ public struct NothingLiteral: Expr {
         visitor.visitNothing(expr: self)
     }
     
-    public init(location: Token) {
-        self.location = location
+    public init(token: Token) {
+        self.location = token
     }
 }
