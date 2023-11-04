@@ -41,15 +41,15 @@ public class Parser {
     // MARK: - Static properties
     
     /// Objo's grammar rules.
+    /// Represents our Pratt parser for parsing expressions.
     public static let rules: [TokenType : GrammarRule] = [
-        // TODO: Finish all token types.
-        .ampersand          : binaryOperator(precedence: .bitwiseAnd),
-        .and                : logicalOperator(precedence: .logicalAnd),
+        .ampersand          : binary(precedence: .bitwiseAnd),
+        .and                : logical(precedence: .logicalAnd),
         .assert             : unused(),
         .as_                : unused(),
         .boolean            : prefix(parselet: LiteralParselet()),
         .breakpoint         : unused(),
-        .caret              : binaryOperator(precedence: .bitwiseXor),
+        .caret              : binary(precedence: .bitwiseXor),
         .class_             : unused(),
         .colon              : GrammarRule(prefix: nil, infix: KeyValueParselet(), precedence: .range),
         .comma              : unused(),
@@ -62,31 +62,43 @@ public class Parser {
         .eof                : unused(),
         .endOfLine          : unused(),
         .equal              : unused(),
-        .equalEqual         : binaryOperator(precedence: .equality),
+        .equalEqual         : binary(precedence: .equality),
         .exit               : unused(),
         .export             : unused(),
         .fieldIdentifier    : prefix(parselet: FieldParselet()),
         .foreign            : unused(),
-        .forwardSlash       : binaryOperator(precedence: .factor),
+        .forwardSlash       : binary(precedence: .factor),
         .forwardSlashEqual  : unused(),
         .for_               : unused(),
         .foreach            : unused(),
         .function           : unused(),
-        .greater            : binaryOperator(precedence: .comparison),
-        .greaterEqual       : binaryOperator(precedence: .comparison),
-        .greaterGreater     : binaryOperator(precedence: .bitwiseShift),
-        .identifier         : prefix(parselet: VariableParselet())
+        .greater            : binary(precedence: .comparison),
+        .greaterEqual       : binary(precedence: .comparison),
+        .greaterGreater     : binary(precedence: .bitwiseShift),
+        .identifier         : prefix(parselet: VariableParselet()),
+        .if_                : GrammarRule(prefix: nil, infix: ConditionalParselet(), precedence: .assignment),
+        .import_            : unused(),
+        .in_                : unused(),
+        .is_                : GrammarRule(prefix: nil, infix: IsParselet(), precedence: .is_),
+        .lcurly             : prefix(parselet: MapParselet()),
+        .less               : binary(precedence: .comparison),
+        .lessEqual          : binary(precedence: .comparison),
+        .lessLess           : binary(precedence: .bitwiseShift),
+        .lparen             : GrammarRule(prefix: GroupParselet(), infix: CallParselet(), precedence: .call),
+        .lsquare            : GrammarRule(prefix: ListParselet(), infix: SubscriptParselet(), precedence: .call),
+        .minus              : GrammarRule(prefix: UnaryParselet(), infix: BinaryParselet(precedence: .term, rightAssociative: false), precedence: .term)
+        // TODO: Finish the rest of the tokens.
         ]
     
     // MARK: - Static methods
     
     /// A convenience method for returning a new grammar rule for a binary operator.
-    private static func binaryOperator(precedence: Precedence, rightAssociative: Bool = false) -> GrammarRule {
+    private static func binary(precedence: Precedence, rightAssociative: Bool = false) -> GrammarRule {
         return GrammarRule(prefix: nil, infix: BinaryParselet(precedence: precedence, rightAssociative: rightAssociative), precedence: precedence)
     }
     
     /// A convenience method for returning a new grammar rule for a logical operator.
-    private static func logicalOperator(precedence: Precedence) -> GrammarRule {
+    private static func logical(precedence: Precedence) -> GrammarRule {
         return GrammarRule(prefix: nil, infix: LogicalParselet(precedence: precedence), precedence: precedence)
     }
     
@@ -178,6 +190,19 @@ public class Parser {
         }
         
         throw ParserError(message: message ?? "Unexpected \(current.type) token.", location: current)
+    }
+    
+    /// If the current token matches any of the specified types it's consumed (i.e. "ditched").
+    /// Identical to `match()` except doesn't return a Bool.
+    ///
+    /// Public so parselets can access it.
+    public func ditch(_ types: TokenType...) {
+        for type in types {
+            if check(type) {
+                advance()
+                return
+            }
+        }
     }
     
     /// Raises a `ParserError` at the current location. If the error is not at the current location,
@@ -368,17 +393,6 @@ public class Parser {
             
             return try statement()
             
-        }
-    }
-    
-    /// If the current token matches any of the specified types it's consumed (i.e. "ditched").
-    /// Identical to `match()` except doesn't return a Bool.
-    private func ditch(_ types: TokenType...) {
-        for type in types {
-            if check(type) {
-                advance()
-                return
-            }
         }
     }
     

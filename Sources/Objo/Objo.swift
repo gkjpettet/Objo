@@ -11,10 +11,39 @@ import Foundation
 public final class Objo {
     private init() {}
     
+    /// Computes a subscript signature given its arity.
+    ///
+    /// If this is a subscript setter then the arity is one greater than the
+    /// index count (since the last parameter is the value to assign).
+    /// Examples:
+    /// ```
+    /// [index, indexN]
+    /// [index, indexN]=(value)
+    /// ```
+    public static func computeSubscriptSignature(arity: Int, isSetter: Bool) throws -> String {
+        if isSetter && arity < 2 {
+            throw ObjoError.invalidArgument("Subscript setters must have at least two parameters.")
+        }
+        
+        var sig: [String] = ["["]
+        
+        let paramCount = isSetter ? arity - 1 : arity
+        for i in 1...paramCount {
+            sig.append("_")
+            if i < paramCount { sig.append(",") }
+        }
+        
+        sig.append("]")
+        
+        if isSetter { sig.append("=(_)") }
+        
+        return sig.joined()
+    }
+    
     /// Computes a function/method signature given its name and arity.
     ///
     /// Examples:
-    /// ```objo
+    /// ```
     /// greet()          -> greet()
     /// print(something) -> print(_)
     /// name=(who)       -> name=(_)

@@ -24,6 +24,6 @@ public struct BareInvocationExpr: Expr {
     }
     
     public func accept(_ visitor: ExprVisitor) {
-        visitor.visitBareInvocationExpr(expr: self)
+        visitor.visitBareInvocation(expr: self)
     }
 }
