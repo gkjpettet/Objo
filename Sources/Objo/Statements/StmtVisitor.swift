@@ -8,12 +8,9 @@
 import Foundation
 
 public protocol StmtVisitor {
-    /// The visitor is visiting an `assert` statement.
     func visitAssertStmt(stmt: AssertStmt)
-    
-    /// The visitor is visiting an expression statement.
+    func visitBlock(stmt: BlockStmt)
     func visitExpressionStmt(stmt: ExpressionStmt)
-    
-    /// The visitor is visiting a variable declaration.
+    func visitFuncDeclaration(stmt: FunctionDeclStmt)
     func visitVarDeclaration(stmt: VarDeclStmt)
 }

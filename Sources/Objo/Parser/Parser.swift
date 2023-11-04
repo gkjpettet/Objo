@@ -413,6 +413,32 @@ public class Parser {
         return _currentIndex >= _tokens.count || _current?.type == .eof
     }
     
+    /// Parses a block of statements.
+    /// Assumes the parser has just consumed the leading `{`.
+    private func block() throws -> BlockStmt {
+        let openingBrace = _previous!
+        
+        var statements: [Stmt] = []
+        
+        // Disregard an optional new line.
+        ditch(.endOfLine)
+        
+        while !check(.rcurly, .eof) {
+            try statements.append(declaration())
+            ditch(.endOfLine)
+        }
+        
+        let closingBrace = try fetch(.rcurly, message: "Expected a closing brace after the block.")
+        
+        // Edge cases: The `else` keyword is permitted after a closing brace in `if` statements and
+        // the `loop` keyword is permitted after a closing brace in `do` loops.
+        if !check(.else_, .loop) {
+            try consume(.endOfLine, message: "Expected a new line after the closing brace.")
+        }
+        
+        return BlockStmt(statements: statements, openingBrace: openingBrace, closingBrace: closingBrace)
+    }
+    
     /// Parses a declaration into a `Stmt`.
     ///
     /// An Objo program is a series of statements. Statements produce a side effect.
@@ -424,6 +450,10 @@ public class Parser {
         if match(.var_) {
             
             return try varDeclaration()
+            
+        } else if match(.function) {
+            
+            return try functionDeclaration()
             
         } else {
             
@@ -458,6 +488,33 @@ public class Parser {
         }
         
         return ExpressionStmt(expression: expr, location: location)
+    }
+    
+    /// Parses a function declaration.
+    /// Assumes the parser has just consumed the `function` keyword.
+    private func functionDeclaration() throws -> FunctionDeclStmt {
+        let funcKeyword = _previous!
+        
+        // Get the name of the function.
+        let name = try fetch(.identifier, message: "Expected a function name. It must begin with a lowercase letter.")
+        
+        try consume(.lparen, message: "Expected an opening parenthesis after the function's name.")
+        
+        // Optional parameters.
+        var params: [Token] = []
+        if !check(.rparen) {
+            repeat {
+                params.append(try fetch(.identifier, message: "Expected parameter name."))
+            } while !match(.comma)
+        }
+        
+        try consume(.rparen, message: "Expected a closing parenthesis after the function parameters.")
+        
+        try consume(.lcurly, message: "Expected an opening curly brace after the function's parameters.")
+    
+        let body = try block()
+        
+        return FunctionDeclStmt(name: name, parameters: params, body: body, funcKeyword: funcKeyword)
     }
     
     /// Returns the grammar rule (if one exists) for the passed token.
