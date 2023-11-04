@@ -14,6 +14,7 @@ public protocol ExprVisitor {
     func visitBinary(expr: BinaryExpr)
     func visitBoolean(expr: BooleanLiteral)
     func visitCall(expr: CallExpr)
+    func visitClass(expr: ClassExpr)
     func visitField(expr: FieldExpr)
     func visitFieldAssignment(expr: FieldAssignmentExpr)
     func visitKeyValue(expr: KeyValueExpr)
@@ -24,6 +25,7 @@ public protocol ExprVisitor {
     func visitMapLiteral(expr: MapLiteral)
     func visitNothing(expr: NothingLiteral)
     func visitNumber(expr: NumberLiteral)
+    func visitPostfix(expr: PostfixExpr)
     func visitRange(expr: RangeExpr)
     func visitStaticField(expr: StaticFieldExpr)
     func visitStaticFieldAssignment(expr: StaticFieldAssignmentExpr)
@@ -33,6 +35,7 @@ public protocol ExprVisitor {
     func visitSuperMethodInvocation(expr: SuperMethodInvocationExpr)
     func visitSuperSetter(expr: SuperSetterExpr)
     func visitTernary(expr: TernaryExpr)
+    func visitThis(expr: ThisExpr)
     func visitUnary(expr: UnaryExpr)
     func visitVariable(expr: VariableExpr)
 }
