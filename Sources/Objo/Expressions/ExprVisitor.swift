@@ -10,6 +10,7 @@ import Foundation
 public protocol ExprVisitor {
     func visitAssignment(expr: AssignmentExpr)
     func visitBareInvocation(expr: BareInvocationExpr)
+    func visitBareSuperInvocation(expr: BareSuperInvocationExpr)
     func visitBinary(expr: BinaryExpr)
     func visitBoolean(expr: BooleanLiteral)
     func visitCall(expr: CallExpr)
@@ -29,6 +30,8 @@ public protocol ExprVisitor {
     func visitString(expr: StringLiteral)
     func visitSubscript(expr: SubscriptExpr)
     func visitSubscriptSetter(expr: SubscriptSetterExpr)
+    func visitSuperMethodInvocation(expr: SuperMethodInvocationExpr)
+    func visitSuperSetter(expr: SuperSetterExpr)
     func visitTernary(expr: TernaryExpr)
     func visitUnary(expr: UnaryExpr)
     func visitVariable(expr: VariableExpr)

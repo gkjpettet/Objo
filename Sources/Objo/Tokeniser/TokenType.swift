@@ -30,7 +30,7 @@ public enum TokenType: Equatable, Hashable {
     case endOfLine
     case equal
     case equalEqual
-    case error // Special use case
+    case error // Special use case.
     case exit
     case export
     case fieldIdentifier
@@ -75,7 +75,6 @@ public enum TokenType: Equatable, Hashable {
     case rsquare
     case semicolon
     case select
-    case self_
     case star
     case starEqual
     case static_
@@ -83,6 +82,7 @@ public enum TokenType: Equatable, Hashable {
     case string
     case super_
     case then
+    case this
     case tilde
     case underscore
     case until
