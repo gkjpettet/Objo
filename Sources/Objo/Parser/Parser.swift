@@ -498,12 +498,12 @@ public class Parser {
         var foreignStatic: [String : ForeignMethodDeclStmt] = [:]
         var constructors: [ConstructorDeclStmt] = []
         var cdecl: ConstructorDeclStmt
-        var constructorArities: [Int : Bool] // key = constructor arity, value not used.
+        var constructorArities: [Int : Bool] = [:] // key = constructor arity, value not used.
         
         while !check(.rcurly, .eof) {
             if match(.constructor) {
                 
-                cdecl = constructorDeclaration(className: className)
+                cdecl = try constructorDeclaration(className: className)
                 
                 if constructorArities[cdecl.arity] != nil {
                     let s = cdecl.arity == 1 ? "a single parameter" : "\(cdecl.arity) parameters"
@@ -518,7 +518,7 @@ public class Parser {
                 var f: ForeignMethodDeclStmt
                 if match(.static_) {
                     // Foreign STATIC method declaration.
-                    f = foreignMethodDeclaration(className: className, isStatic: true)
+                    f = try foreignMethodDeclaration(className: className, isStatic: true)
                     if staticMethods[f.signature] != nil || foreignStatic[f.signature] != nil {
                         try error(message: "Duplicate method definition: \(f.signature)", location: f.location)
                     } else {
@@ -527,7 +527,7 @@ public class Parser {
                     
                 } else {
                     // Foreign INSTANCE method declaration.
-                    f = foreignMethodDeclaration(className: className, isStatic: false)
+                    f = try foreignMethodDeclaration(className: className, isStatic: false)
                     if methods[f.signature] != nil || foreignInstance[f.signature] != nil  {
                         try error(message: "Duplicate method definition: \(f.signature)", location: f.location)
                     } else {
@@ -570,6 +570,32 @@ public class Parser {
         try consume(.rcurly, message: "Expected a closing curly brace after the class body.")
         
         return ClassDeclStmt(superclass: superclass, identifier: identifier, constructors: constructors, staticMethods: staticMethods, methods: methods, foreignInstanceMethods: foreignInstance, foreignStaticMethods: foreignStatic, classKeyword: classKeyword, isForeign: isForeign)
+    }
+    
+    /// Parses a class constructor declaration.
+    ///
+    /// Assumes the parser has just consumed the `constructor` keyword.
+    /// ```
+    /// constructor(params){}
+    /// ```
+    private func constructorDeclaration(className: String) throws -> ConstructorDeclStmt {
+        let keyword = _previous!
+        
+        try consume(.lparen, message: "Expected an opening parenthesis after the `constructor` keyword.")
+        
+        // Optional parameters.
+        var parameters: [Token] = []
+        if !check(.rparen) {
+            repeat {
+                parameters.append(try fetch(.identifier, message: "Expected parameter name."))
+            } while !match(.comma)
+        }
+        
+        try consume(.rparen, message: "Expected a closing parenthesis after the constructor's parameters.")
+        
+        try consume(.lcurly, message: "Expected an opening curly brace after the constructor's parameters.")
+        
+        return try ConstructorDeclStmt(className: className, parameters: parameters, body: try block(), constructorKeyword: keyword)
     }
     
     /// Parses a declaration into a `Stmt`.
@@ -632,6 +658,45 @@ public class Parser {
         return ExpressionStmt(expression: expr, location: location)
     }
     
+    /// Parses a foreign class method declaration (instance or static).
+    ///
+    /// There are two types of foreign methods: regular and setters.
+    /// Regular methods may or may not return values and can accept any number of arguments.
+    /// Setters do not return a value and must have one argument. Format:
+    /// ```
+    /// age=(value){} # Note the `=` to denote it's a setter.
+    /// ```
+    /// If `isStatic` is `true` then this is a static method declaration.
+    private func foreignMethodDeclaration(className: String, isStatic: Bool) throws -> ForeignMethodDeclStmt {
+        if match(Parser.overloadableOperators) {
+            return try overloadedOperator(className: className, op: _previous!, isStatic: isStatic, isForeign: true) as! ForeignMethodDeclStmt
+        }
+        
+        let identifier = try fetch(.identifier)
+        
+        let isSetter = match(.equal)
+        
+        try consume(.lparen, message: "Expected an opening parenthesis after the method's name.")
+        
+        // Optional parameters.
+        var parameters: [Token] = []
+        if !check(.rparen) {
+            repeat {
+                parameters.append(try fetch(.identifier, message: "Expected parameter name."))
+            } while !match(.comma)
+        }
+        
+        if isSetter && parameters.count != 1 {
+            try error(message: "Setters must have exactly one parameter.", location: identifier)
+        }
+        
+        try consume(.rparen, message: "Expected a closing parenthesis after method parameters.")
+        
+        try consume(.endOfLine, message: "Expected a new line after foreign method declaration.")
+        
+        return try ForeignMethodDeclStmt(className: className, identifier: identifier, isSetter: isSetter, isStatic: isStatic, parameters: parameters)
+    }
+    
     /// Parses a function declaration.
     /// Assumes the parser has just consumed the `function` keyword.
     private func functionDeclaration() throws -> FunctionDeclStmt {
@@ -677,7 +742,7 @@ public class Parser {
         // Handle operators differently.
         if match(Parser.overloadableOperators) {
             /// TODO: This might be a bug in Xojo. Shouldn't be able to cast ForeignMethodDeclStmt to MethodDeclStmt!
-            return overloadedOperator(className: className, op: _previous!, isStatic: isStatic, isForeign: false)
+            return try overloadedOperator(className: className, op: _previous!, isStatic: isStatic, isForeign: false) as! MethodDeclStmt
         }
         
         let identifier = try fetch(.identifier)
