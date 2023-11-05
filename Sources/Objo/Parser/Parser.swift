@@ -470,6 +470,16 @@ public class Parser {
     
     /// Parses a class declaration statement.
     /// Assumes the parser has just consumed the `class` keyword token.
+    ///
+    /// ```objo
+    /// class Doctor is Person {
+    ///  constructor(name) {}
+    ///  foreign static fsmethod()
+    ///  foreign fimethod()
+    ///  static smethod() {}
+    ///  imethod() {}
+    /// }
+    /// ```
     private func classDeclaration(isForeign: Bool) throws -> ClassDeclStmt {
         let classKeyword = _previous!
         
@@ -664,7 +674,7 @@ public class Parser {
     /// Regular methods may or may not return values and can accept any number of arguments.
     /// Setters do not return a value and must have one argument. Format:
     /// ```
-    /// age=(value){} # Note the `=` to denote it's a setter.
+    /// age=(value) # Note the `=` to denote it's a setter.
     /// ```
     /// If `isStatic` is `true` then this is a static method declaration.
     private func foreignMethodDeclaration(className: String, isStatic: Bool) throws -> ForeignMethodDeclStmt {

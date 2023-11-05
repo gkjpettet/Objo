@@ -505,7 +505,7 @@ public class Tokeniser {
     /// Returns a base token of the specified type beginning at _tokenStart on the current line in the current script.
     private func makeToken(type: TokenType, hasLexeme: Bool = false) -> BaseToken {
         if hasLexeme {
-            let lexeme = String(_chars[_tokenStart..._current])
+            let lexeme = String(_chars[_tokenStart..._current - 1])
             return BaseToken(type: type, start: _tokenStart, line: _lineNumber, lexeme: lexeme, scriptId: _scriptId)
         } else {
             return BaseToken(type: type, start: _tokenStart, line: _lineNumber, lexeme: nil, scriptId: _scriptId)
