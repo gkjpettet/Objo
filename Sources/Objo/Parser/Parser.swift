@@ -40,6 +40,21 @@ public class Parser {
     
     // MARK: - Static properties
     
+    /// An array of the built-in types that cannot be inherited from.
+    private static let notInheritable = [
+        "Boolean", "List", "Map", "Nothing", "Number", "String", "System"
+    ]
+    
+    /// An array of the operator types that can be overloaded.
+    private static let overloadableOperators: [TokenType] = [
+        .ampersand, .dotDotLess, .dotDotDot, .equalEqual, .forwardSlash, .greater, .greaterEqual, .greaterGreater,
+        .is_, .less, .lessLess, .lessEqual, .lsquare, .minus, .notEqual, .percent, .pipe, .not, .plus,
+        .star, .tilde
+    ]
+    
+    /// An array of the operator types that are overloadable unary operators.
+    private static let overloadableUnaryOperators: [TokenType] = [.minus, .not, .tilde]
+    
     /// Objo's grammar rules.
     /// Represents our Pratt parser for parsing expressions.
     public static let rules: [TokenType : GrammarRule] = [
@@ -280,6 +295,20 @@ public class Parser {
         return false
     }
     
+    /// If the current token matches any of the specified types it is consumed and
+    /// the function returns `true`. Otherwise it just returns `false`.
+    ///
+    /// Public so parselets can access it.
+    public func match(_ types: [TokenType]) -> Bool {
+        for type in types {
+            if check(type) {
+                advance()
+                return true
+            }
+        }
+        return false
+    }
+    
     /// Parses an array of tokens into an abstract syntax tree.
     public func parse(tokens: [Token]) -> [Stmt] {
         reset()
@@ -439,6 +468,110 @@ public class Parser {
         return BlockStmt(statements: statements, openingBrace: openingBrace, closingBrace: closingBrace)
     }
     
+    /// Parses a class declaration statement.
+    /// Assumes the parser has just consumed the `class` keyword token.
+    private func classDeclaration(isForeign: Bool) throws -> ClassDeclStmt {
+        let classKeyword = _previous!
+        
+        let identifier = try fetch(.uppercaseIdentifier, message: "Expected a class name beginning with an uppercase letter.")
+        
+        let className = identifier.lexeme!
+        
+        // Optional superclass.
+        var superclass: String?
+        if match(.is_) {
+            // Edge case: Attempting to inherit from a built-in type.
+            if Parser.notInheritable.contains(_current!.lexeme!) {
+                try error(message: "Classes cannot inherit from built-in types.")
+            }
+            superclass = try fetch(.uppercaseIdentifier, message: "Expected a superclass name beginning with an uppercase letter.").lexeme
+        }
+        
+        try consume(.lcurly, message: "Expected an opening curly brace after the class name.")
+        
+        ditch(.endOfLine)
+        
+        // Optional constructors and methods.
+        var methods: [String : MethodDeclStmt] = [:]
+        var staticMethods: [String : MethodDeclStmt] = [:]
+        var foreignInstance: [String : ForeignMethodDeclStmt] = [:]
+        var foreignStatic: [String : ForeignMethodDeclStmt] = [:]
+        var constructors: [ConstructorDeclStmt] = []
+        var cdecl: ConstructorDeclStmt
+        var constructorArities: [Int : Bool] // key = constructor arity, value not used.
+        
+        while !check(.rcurly, .eof) {
+            if match(.constructor) {
+                
+                cdecl = constructorDeclaration(className: className)
+                
+                if constructorArities[cdecl.arity] != nil {
+                    let s = cdecl.arity == 1 ? "a single parameter" : "\(cdecl.arity) parameters"
+                    try error(message: "A constructor with \(s) has already be declared.")
+                } else {
+                    constructors.append(cdecl)
+                    constructorArities[cdecl.arity] = false
+                }
+                
+            } else if match(.foreign) {
+                
+                var f: ForeignMethodDeclStmt
+                if match(.static_) {
+                    // Foreign STATIC method declaration.
+                    f = foreignMethodDeclaration(className: className, isStatic: true)
+                    if staticMethods[f.signature] != nil || foreignStatic[f.signature] != nil {
+                        try error(message: "Duplicate method definition: \(f.signature)", location: f.location)
+                    } else {
+                        foreignStatic[f.signature] = f
+                    }
+                    
+                } else {
+                    // Foreign INSTANCE method declaration.
+                    f = foreignMethodDeclaration(className: className, isStatic: false)
+                    if methods[f.signature] != nil || foreignInstance[f.signature] != nil  {
+                        try error(message: "Duplicate method definition: \(f.signature)", location: f.location)
+                    } else {
+                        foreignInstance[f.signature] = f
+                    }
+                }
+                
+            } else if match(.static_) {
+                
+                // Native STATIC method declaration.
+                let sm = try methodDeclaration(className: className, isStatic: true)
+                
+                if staticMethods[sm.signature] != nil {
+                    try error(message: "Duplicate method definition: \(sm.signature)", location: sm.location)
+                }
+                
+                if foreignInstance[sm.signature] != nil && foreignInstance[sm.signature]!.isStatic {
+                    try error(message: "Duplicate method definition: \(sm.signature)", location: sm.location)
+                }
+                
+                staticMethods[sm.signature] = sm
+                
+            } else {
+                
+                let m = try methodDeclaration(className: className, isStatic: false)
+                
+                if methods[m.signature] != nil {
+                    try error(message: "Duplicate method definition: \(m.signature)", location: m.location)
+                }
+                if foreignInstance[m.signature] != nil && !foreignInstance[m.signature]!.isStatic {
+                    try error(message: "Duplicate method definition: \(m.signature). Conflicts with an existing foreign instance method.", location: m.location)
+                }
+                
+                methods[m.signature] = m
+            }
+            
+            ditch(.endOfLine)
+        }
+        
+        try consume(.rcurly, message: "Expected a closing curly brace after the class body.")
+        
+        return ClassDeclStmt(superclass: superclass, identifier: identifier, constructors: constructors, staticMethods: staticMethods, methods: methods, foreignInstanceMethods: foreignInstance, foreignStaticMethods: foreignStatic, classKeyword: classKeyword, isForeign: isForeign)
+    }
+    
     /// Parses a declaration into a `Stmt`.
     ///
     /// An Objo program is a series of statements. Statements produce a side effect.
@@ -454,6 +587,15 @@ public class Parser {
         } else if match(.function) {
             
             return try functionDeclaration()
+            
+        } else if match(.class_) {
+            
+            return try classDeclaration(isForeign: false)
+            
+        } else if match(.foreign) {
+            
+            try consume(.class_, message: "Expected `class` after the `foreign` keyword.")
+            return try classDeclaration(isForeign: true)
             
         } else {
             
@@ -521,7 +663,126 @@ public class Parser {
     private func getRule(type: TokenType) -> GrammarRule? {
         return Parser.rules[type]
     }
-
+    
+    /// Parses a class method declaration (instance or static).
+    ///
+    /// There are two types of methods: regular and setters.
+    /// Regular methods may or may not return values and can accept any number of arguments.
+    /// Setters do not return a value and must have one argument. Format:
+    /// ```
+    /// age=(value){} # Note the `=` to denote it's a setter.
+    /// ```
+    /// If `isStatic` is `true` then this is a static method declaration.
+    private func methodDeclaration(className: String, isStatic: Bool) throws -> MethodDeclStmt {
+        // Handle operators differently.
+        if match(Parser.overloadableOperators) {
+            /// TODO: This might be a bug in Xojo. Shouldn't be able to cast ForeignMethodDeclStmt to MethodDeclStmt!
+            return overloadedOperator(className: className, op: _previous!, isStatic: isStatic, isForeign: false)
+        }
+        
+        let identifier = try fetch(.identifier)
+        
+        let isSetter = match(.equal)
+        
+        // Optional parameters.
+        var parameters: [Token] = []
+        var hasParens = false
+        if match(.lparen) {
+            hasParens = true
+            if !check(.rparen) {
+                repeat {
+                    parameters.append(try fetch(.identifier, message: "Expected parameter name."))
+                } while !match(.comma)
+            }
+        }
+        
+        if isSetter && parameters.count != 1 {
+            try error(message: "Setters must have exactly one parameter.", location: identifier)
+        }
+        
+        if hasParens {
+            try consume(.rparen, message: "Expected a closing parenthesis after the method parameters")
+        }
+        
+        try consume(.lcurly, message: "Expected an opening curly brace after method parameters.")
+        
+        return try MethodDeclStmt(className: className, identifier: identifier, isSetter: isSetter, isStatic: isStatic, parameters: parameters, body: try block())
+    }
+    
+    /// Parses an overloaded operator `op`. Returns either a `MethodDeclStmt` or a `ForeignMethodDeclStmt`.
+    ///
+    /// Assumes `op` is an overloadable operator.
+    /// Assumes the last consumed token is the operator to overload.
+    /// Examples:
+    /// ```
+    /// -() {body} // prefix (i.e. unary) `-`
+    /// +(a) {body} // infix `+`
+    /// [a] {body} // single index subscript getter
+    /// [a, b] {body} // multi-index subscript getter
+    /// [a]=(value) // single index subscript setter
+    /// [a, b]=(value) // single index subscript setter
+    /// ```
+    /// Note: foreign methods do not have a body.
+    private func overloadedOperator(className: String, op: Token, isStatic: Bool, isForeign: Bool) throws -> Stmt {
+        // Every declaration needs an opening parenthesis after the operator *except* subscripts.
+        if op.type != .lsquare {
+            try consume(.lparen, message: "Expected an opening parenthesis after the overloaded operator.")
+        }
+        
+        // Parameter(s).
+        var parameters: [Token] = []
+        if !check(.rparen) {
+            repeat {
+                parameters.append(try fetch(.identifier, message: "Expected a parameter name."))
+            } while !match(.comma)
+        }
+        
+        // Closer after parameter/index(es).
+        if op.type == .lsquare {
+            try consume(.rsquare, message: "Expected a closing square bracket after indexes.")
+        } else {
+            try consume(.rparen, message: "Expected a closing parenthesis after method parameters.")
+        }
+        
+        // Subscript setter?
+        // The value to assign becomes the last parameter.
+        var isSetter = false
+        if match(.equal) {
+            // Must have at least one parameter already.
+            if parameters.count == 0 {
+                try error(message: "Subscript setters require at least one index after the opening square bracket.")
+            }
+            
+            if op.type == .lsquare {
+                isSetter = true
+                try consume(.lparen, message: "Expected an opening parenthesis after `=`.")
+                parameters.append(try fetch(.identifier))
+                try consume(.rparen, message: "Expected a closing parenthesis after the value to assign to overloaded subscript setter.")
+            } else {
+                try error(message: "Unexpected `=` token. Only overloaded subscript operators may be setters.")
+            }
+        }
+        
+        // Check the correct number of parameters have been specified.
+        if parameters.count == 0 {
+            // Only overloadable unary operators may have zero parameters.
+            if Parser.overloadableUnaryOperators.contains(op.type) {
+                try error(message: "`\(op.type)` is not an overloadable unary operator.")
+            }
+        } else if parameters.count > 1 && op.type != .lsquare {
+            try error(message: "Only subscript methods may have more than one parameter.")
+        }
+        
+        if isForeign {
+            // Foreign methods don't have a body so we're done.
+            return try ForeignMethodDeclStmt(className: className, identifier: op, isSetter: isSetter, isStatic: isStatic, parameters: parameters)
+        } else {
+            // Consume the method's body.
+            try consume(.lcurly, message: "Expected an opening curly brace after method parameters.")
+            return try MethodDeclStmt(className: className, identifier: op, isSetter: isSetter, isStatic: isStatic, parameters: parameters, body: try block())
+        }
+    }
+    
     /// Puts the parser into panic mode.
     ///
     /// We try to put the parser back into a usable state once it has encountered an error.

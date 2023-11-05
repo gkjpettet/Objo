@@ -10,7 +10,11 @@ import Foundation
 public protocol StmtVisitor {
     func visitAssertStmt(stmt: AssertStmt)
     func visitBlock(stmt: BlockStmt)
+    func visitClassDeclaration(stmt: ClassDeclStmt)
+    func visitConstructorDeclaration(stmt: ConstructorDeclStmt)
     func visitExpressionStmt(stmt: ExpressionStmt)
+    func visitForeignMethodDeclaration(stmt: ForeignMethodDeclStmt)
     func visitFuncDeclaration(stmt: FunctionDeclStmt)
+    func visitMethodDeclaration(stmt: MethodDeclStmt)
     func visitVarDeclaration(stmt: VarDeclStmt)
 }
