@@ -751,7 +751,6 @@ public class Parser {
     private func methodDeclaration(className: String, isStatic: Bool) throws -> MethodDeclStmt {
         // Handle operators differently.
         if match(Parser.overloadableOperators) {
-            /// TODO: This might be a bug in Xojo. Shouldn't be able to cast ForeignMethodDeclStmt to MethodDeclStmt!
             return try overloadedOperator(className: className, op: _previous!, isStatic: isStatic, isForeign: false) as! MethodDeclStmt
         }
         
