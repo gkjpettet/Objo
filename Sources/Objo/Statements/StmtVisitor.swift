@@ -18,4 +18,5 @@ public protocol StmtVisitor {
     func visitIf(stmt: IfStmt)
     func visitMethodDeclaration(stmt: MethodDeclStmt)
     func visitVarDeclaration(stmt: VarDeclStmt)
+    func visitWhile(stmt: WhileStmt)
 }

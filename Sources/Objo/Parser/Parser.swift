@@ -245,6 +245,7 @@ public class Parser {
     
     /// If the current token matches any of the specified types it's consumed (i.e. "ditched").
     /// Identical to `match()` except doesn't return a Bool.
+    /// Mostly used for ignoring optional new lines.
     ///
     /// Public so parselets can access it.
     public func ditch(_ types: TokenType...) {
@@ -449,7 +450,6 @@ public class Parser {
         
         var statements: [Stmt] = []
         
-        // Disregard an optional new line.
         ditch(.endOfLine)
         
         while !check(.rcurly, .eof) {
@@ -613,7 +613,6 @@ public class Parser {
     /// An Objo program is a series of statements. Statements produce a side effect.
     /// Declarations are a type of statement that bind new identifiers.
     private func declaration() throws -> Stmt {
-        // Edge case: Make sure we skip a superfluous new line that may be present.
         ditch(.endOfLine)
         
         if match(.var_) {
@@ -915,6 +914,10 @@ public class Parser {
             
             return try ifStatement()
             
+        } else if match(.while_) {
+          
+            return try whileStatement()
+            
         } else if match(.assert) {
             
             return try assertStatement()
@@ -976,5 +979,19 @@ public class Parser {
         }
         
         return VarDeclStmt(identifier: identifier, initialiser: initialiser, location: varLocation)
+    }
+    
+    /// Parses a `while` statement.
+    /// Assumes the `while` token has just been consumed.
+    private func whileStatement() throws -> WhileStmt {
+        let whileKeyword = _previous!
+        
+        let condition = try expression()
+        
+        ditch(.endOfLine)
+        
+        try consume(.lcurly, message: "Expected an opening parenthesis after the `while` condition.")
+        
+        return WhileStmt(condition: condition, body: try block(), whileKeyword: whileKeyword)
     }
 }
