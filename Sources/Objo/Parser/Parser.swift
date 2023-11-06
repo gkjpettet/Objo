@@ -608,6 +608,16 @@ public class Parser {
         return try ConstructorDeclStmt(className: className, parameters: parameters, body: try block(), constructorKeyword: keyword)
     }
     
+    /// Parses a `continue` statement.
+    /// Assumes the `continue` keyword has just been consumed.
+    private func continueStatement() throws -> ContinueStmt {
+       let keyword = _previous!
+        
+        try consume(.endOfLine, message: "Expected a new line after the `continue` keyword.")
+        
+        return ContinueStmt(keyword: keyword)
+    }
+    
     /// Parses a declaration into a `Stmt`.
     ///
     /// An Objo program is a series of statements. Statements produce a side effect.
@@ -1016,6 +1026,10 @@ public class Parser {
         } else if match(.exit) {
             
             return try exitStatement()
+            
+        } else if match(.continue_) {
+            
+            return try continueStatement()
             
         } else {
             

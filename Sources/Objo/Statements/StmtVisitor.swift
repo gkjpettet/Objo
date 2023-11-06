@@ -12,6 +12,7 @@ public protocol StmtVisitor {
     func visitBlock(stmt: BlockStmt)
     func visitClassDeclaration(stmt: ClassDeclStmt)
     func visitConstructorDeclaration(stmt: ConstructorDeclStmt)
+    func visitContinue(stmt: ContinueStmt)
     func visitExit(stmt: ExitStmt)
     func visitExpressionStmt(stmt: ExpressionStmt)
     func visitFor(stmt: ForStmt)
