@@ -1067,11 +1067,73 @@ public class Parser {
             
             return try breakpointStatement()
             
+        } else if match(.switch_) {
+            
+            return try switchStatement()
+            
         } else {
             
             return try expressionStatement()
             
         }
+    }
+    
+    /// Parses a `switch` statement. Assumes the parser has just consumed the `switch` token.
+    ///
+    /// ```
+    /// switch consider {
+    ///  case value1 {}
+    ///  case value2, value3 {}
+    ///  else {}
+    /// }
+    /// ```
+    private func switchStatement() throws -> SwitchStmt {
+        let switchKeyword = _previous!
+        
+        let consider = try expression()
+        
+        ditch(.endOfLine)
+        
+        try consume(.lcurly, message: "Expected an opening curly brace after the switch expression to consider.")
+        
+        var cases: [CaseStmt] = []
+        while match(.case_) {
+            let caseKeyword = _previous!
+            
+            // Get this case's value(s).
+            var values: [Expr] = []
+            repeat {
+                values.append(try expression())
+            } while !match(.comma)
+            
+            ditch(.endOfLine)
+            
+            try consume(.lcurly, message: "Expected a block after the case's value(s).")
+            
+            let body = try block()
+            
+            ditch(.endOfLine)
+            
+            cases.append(CaseStmt(values: values, body: body, keyword: caseKeyword))
+        }
+        
+        // Optional `else` case.
+        var elseCase: ElseCaseStmt?
+        if match(.else_) {
+            let elseKeyword = _previous!
+            
+            ditch(.endOfLine)
+            
+            try consume(.lcurly, message: "Expected an opening curly brace after the `else` keyword.")
+            
+            elseCase = ElseCaseStmt(body: try block(), keyword: elseKeyword)
+        }
+        
+        ditch(.endOfLine)
+        
+        try consume(.rcurly, message: "Expected a closing curly brace after the final switch case.")
+        
+        return SwitchStmt(consider: consider, cases: cases, elseCase: elseCase, keyword: switchKeyword)
     }
     
     /// Called when the parser enters panic mode.

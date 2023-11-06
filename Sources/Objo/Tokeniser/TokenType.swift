@@ -74,13 +74,13 @@ public enum TokenType: Equatable, Hashable {
     case rparen
     case rsquare
     case semicolon
-    case select
     case star
     case starEqual
     case static_
     case staticFieldIdentifier
     case string
     case super_
+    case switch_
     case then
     case this
     case tilde
