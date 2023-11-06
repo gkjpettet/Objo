@@ -15,6 +15,7 @@ public protocol StmtVisitor {
     func visitExpressionStmt(stmt: ExpressionStmt)
     func visitForeignMethodDeclaration(stmt: ForeignMethodDeclStmt)
     func visitFuncDeclaration(stmt: FunctionDeclStmt)
+    func visitIf(stmt: IfStmt)
     func visitMethodDeclaration(stmt: MethodDeclStmt)
     func visitVarDeclaration(stmt: VarDeclStmt)
 }

@@ -739,6 +739,38 @@ public class Parser {
         return Parser.rules[type]
     }
     
+    /// Parses an `if` statement. Assumes the parser has just consumed the `if` token.
+    private func ifStatement() throws -> IfStmt {
+        let ifKeyword = _previous!
+        
+        let condition = try expression()
+        
+        // Parse the "then" branch.
+        var thenBranch: Stmt?
+        if match(.then) {
+            // Single line "if".
+            thenBranch = try statement()
+        } else if match(.lcurly) {
+            thenBranch = try block()
+        } else {
+            try error(message: "Expected `then` or an opening curly brace after the condition.")
+        }
+        
+        // Optional else statement.
+        var elseBranch: Stmt?
+        if match(.else_) {
+            if match(.if_) {
+                elseBranch = try ifStatement()
+            } else if match(.lcurly) {
+                elseBranch = try block()
+            } else {
+                try error(message: "Expected an opening curly brace or another `if` statement after the `if` keyword.")
+            }
+        }
+        
+        return IfStmt(condition: condition, thenBranch: thenBranch!, elseBranch: elseBranch, ifKeyword: ifKeyword)
+    }
+    
     /// Parses a class method declaration (instance or static).
     ///
     /// There are two types of methods: regular and setters.
@@ -874,7 +906,16 @@ public class Parser {
     
     /// Parses a statement.
     private func statement() throws -> Stmt {
-        if match(.assert) {
+        // TODO: Implement the remaining statements.
+        if match(.lcurly) {
+        
+            return try block()
+            
+        } else if match(.if_) {
+            
+            return try ifStatement()
+            
+        } else if match(.assert) {
             
             return try assertStatement()
             
