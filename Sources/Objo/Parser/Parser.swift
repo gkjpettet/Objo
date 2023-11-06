@@ -639,6 +639,16 @@ public class Parser {
         }
     }
     
+    /// Parses an `exit` statement.
+    /// Assumes the `exit` keyword has just been consumed.
+    private func exitStatement() throws -> ExitStmt {
+        let exitKeyword = _previous!
+        
+        try consume(.endOfLine, message: "Expected a new line after the `exit` keyword.")
+        
+        return ExitStmt(exitKeyword: exitKeyword)
+    }
+    
     /// Parses an expression and wraps it up inside a statement.
     /// `terminator` will be consumed.
     ///
@@ -1002,6 +1012,10 @@ public class Parser {
         } else if match(.assert) {
             
             return try assertStatement()
+            
+        } else if match(.exit) {
+            
+            return try exitStatement()
             
         } else {
             
