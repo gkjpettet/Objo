@@ -10,6 +10,7 @@ import Foundation
 public protocol StmtVisitor {
     func visitAssertStmt(stmt: AssertStmt)
     func visitBlock(stmt: BlockStmt)
+    func visitBreakpoint(stmt: BreakpointStmt)
     func visitClassDeclaration(stmt: ClassDeclStmt)
     func visitConstructorDeclaration(stmt: ConstructorDeclStmt)
     func visitContinue(stmt: ContinueStmt)

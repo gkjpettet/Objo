@@ -468,6 +468,16 @@ public class Parser {
         return BlockStmt(statements: statements, openingBrace: openingBrace, closingBrace: closingBrace)
     }
     
+    /// Parses a `breakpoint` statement.
+    /// Assumes the parser has just consumed the `breakpoint` keyword.
+    private func breakpointStatement() throws -> BreakpointStmt {
+        let keyword = _previous!
+        
+        try consume(.endOfLine, message: "Expected a new line after the `breakpoint` statement.")
+        
+        return BreakpointStmt(keyword: keyword)
+    }
+    
     /// Parses a class declaration statement.
     /// Assumes the parser has just consumed the `class` keyword token.
     ///
@@ -1052,6 +1062,10 @@ public class Parser {
         } else if match(.continue_) {
             
             return try continueStatement()
+            
+        } else if match(.breakpoint) {
+            
+            return try breakpointStatement()
             
         } else {
             
