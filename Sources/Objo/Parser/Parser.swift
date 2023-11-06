@@ -659,6 +659,32 @@ public class Parser {
         }
     }
     
+    /// Parses a `do` statement.
+    /// Assumes the `do` token has just been consumed.
+    ///
+    /// ```objo
+    /// do {
+    ///  statements
+    /// } loop until condition
+    /// ```
+    private func doStatement() throws -> DoStmt {
+       let keyword = _previous!
+        
+        ditch(.endOfLine)
+        
+        try consume(.lcurly, message: "Expected an opening curly brace after the `do` keyword.")
+        
+        let body = try block()
+        
+        try consume(.loop, message: "Expected the `loop` keyword after the closing brace.")
+        
+        try consume(.until, message: "Expected the `until` keyword after `loop`.")
+        
+        let condition = try expression()
+        
+        return DoStmt(condition: condition, body: body, keyword: keyword)
+    }
+    
     /// Parses an `exit` statement.
     /// Assumes the `exit` keyword has just been consumed.
     private func exitStatement() throws -> ExitStmt {
@@ -1026,7 +1052,6 @@ public class Parser {
     
     /// Parses a statement.
     private func statement() throws -> Stmt {
-        // TODO: Implement the remaining statements.
         if match(.lcurly) {
         
             return try block()
@@ -1070,6 +1095,10 @@ public class Parser {
         } else if match(.switch_) {
             
             return try switchStatement()
+            
+        } else if match(.do_) {
+            
+            return try doStatement()
             
         } else {
             

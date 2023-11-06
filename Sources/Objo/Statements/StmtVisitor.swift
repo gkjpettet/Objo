@@ -15,6 +15,7 @@ public protocol StmtVisitor {
     func visitClassDeclaration(stmt: ClassDeclStmt)
     func visitConstructorDeclaration(stmt: ConstructorDeclStmt)
     func visitContinue(stmt: ContinueStmt)
+    func visitDo(stmt: DoStmt)
     func visitElseCase(stmt: ElseCaseStmt)
     func visitExit(stmt: ExitStmt)
     func visitExpressionStmt(stmt: ExpressionStmt)
