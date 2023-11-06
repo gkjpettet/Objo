@@ -13,6 +13,8 @@ public protocol StmtVisitor {
     func visitClassDeclaration(stmt: ClassDeclStmt)
     func visitConstructorDeclaration(stmt: ConstructorDeclStmt)
     func visitExpressionStmt(stmt: ExpressionStmt)
+    func visitFor(stmt: ForStmt)
+    func visitForEach(stmt: ForEachStmt)
     func visitForeignMethodDeclaration(stmt: ForeignMethodDeclStmt)
     func visitFuncDeclaration(stmt: FunctionDeclStmt)
     func visitIf(stmt: IfStmt)

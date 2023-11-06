@@ -667,6 +667,32 @@ public class Parser {
         return ExpressionStmt(expression: expr, location: location)
     }
     
+    /// Parses a `foreach` loop.
+    /// Assumes we have just consumed the `foreach` keyword.
+    ///
+    /// Syntax:
+    ///
+    /// ```objo
+    /// foreach i in RANGE {
+    ///  statements
+    /// }
+    /// ```
+    private func foreachStatement() throws -> ForEachStmt {
+        let foreachKeyword = _previous!
+        
+        let loopCounter = try fetch(.identifier, message: "Expected a name for the loop counter after the `foreach` keyword.")
+        
+        try consume(.in_, message: "Expected the `in` keyword after the loop counter name.")
+        
+        let range = try expression()
+        
+        ditch(.endOfLine)
+        
+        try consume(.lcurly, message: "Expected an opening curly brace after the range expression.")
+        
+        return ForEachStmt(foreachKeyword: foreachKeyword, loopCounter: loopCounter, range: range, body: try block())
+    }
+    
     /// Parses a foreign class method declaration (instance or static).
     ///
     /// There are two types of foreign methods: regular and setters.
@@ -704,6 +730,53 @@ public class Parser {
         try consume(.endOfLine, message: "Expected a new line after foreign method declaration.")
         
         return try ForeignMethodDeclStmt(className: className, identifier: identifier, isSetter: isSetter, isStatic: isStatic, parameters: parameters)
+    }
+    
+    /// Parses a `for` loop.
+    /// Assumes we've just consumed the `for` keyword.
+    ///
+    /// Syntax:
+    ///
+    /// ```objo
+    /// for (initialiser?; condition?; incrementExpression?) {
+    ///  statements
+    /// }
+    /// ```
+    private func forStatement() throws -> ForStmt {
+        let forKeyword = _previous!
+        
+        try consume(.lparen, message: "Expected an opening parenthesis after the `for` keyword.")
+        
+        var initialiser: Stmt?
+        if match(.semicolon) {
+            // No initialiser.
+        } else if match(.var_) {
+            // Variable declaration.
+            initialiser = try varDeclaration(terminator: .semicolon)
+        } else {
+            // Just an expression.
+            initialiser = try expressionStatement(terminator: .semicolon)
+        }
+        
+        // Optional condition to exit the loop.
+        var condition: Expr?
+        if !match(.semicolon) {
+            condition = try expression()
+            try consume(.semicolon, message: "Expected a semicolon after the loop condition.")
+        }
+        
+        // Optional increment expression.
+        var increment: Expr?
+        if !match(.rparen) {
+            increment = try expression()
+            try consume(.rparen, message: "Expected a closing parenthesis after the loop's increment expression.")
+        }
+        
+        ditch(.endOfLine)
+        
+        try consume(.lcurly, message: "Expected an opening curly brace after the `for` clauses.")
+        
+        return ForStmt(initialiser: initialiser, condition: condition, increment: increment, body: try block(), forKeyword: forKeyword)
     }
     
     /// Parses a function declaration.
@@ -917,6 +990,14 @@ public class Parser {
         } else if match(.while_) {
           
             return try whileStatement()
+            
+        } else if match(.for_) {
+            
+            return try forStatement()
+            
+        } else if match(.foreach) {
+            
+            return try foreachStatement()
             
         } else if match(.assert) {
             
