@@ -21,6 +21,7 @@ public protocol StmtVisitor {
     func visitFuncDeclaration(stmt: FunctionDeclStmt)
     func visitIf(stmt: IfStmt)
     func visitMethodDeclaration(stmt: MethodDeclStmt)
+    func visitReturn(stmt: ReturnStmt)
     func visitVarDeclaration(stmt: VarDeclStmt)
     func visitWhile(stmt: WhileStmt)
 }

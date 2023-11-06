@@ -996,6 +996,24 @@ public class Parser {
         synchronise()
     }
     
+    /// Parses a `return` statement.
+    /// Assumes the parser has just consumed the `return` keyword.
+    private func returnStatement() throws -> ReturnStmt {
+        let keyword = _previous!
+        
+        var value: Expr?
+        if match(.endOfLine, .eof) {
+            value = NothingLiteral(token: keyword)
+        } else {
+            value = try expression()
+            if !check(.rcurly) {
+                try consume(.endOfLine, message: "Expected a new line or closing curly brace after the return statement value.")
+            }
+        }
+        
+        return ReturnStmt(keyword: keyword, value: value)
+    }
+    
     /// Parses a statement.
     private func statement() throws -> Stmt {
         // TODO: Implement the remaining statements.
@@ -1022,6 +1040,10 @@ public class Parser {
         } else if match(.assert) {
             
             return try assertStatement()
+            
+        } else if match(.return_) {
+            
+            return try returnStatement()
             
         } else if match(.exit) {
             
