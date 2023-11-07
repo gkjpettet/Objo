@@ -1,13 +1,11 @@
 //
-//  ParserError.swift
-//  
+//  CompilerError.swift
 //
-//  Created by Garry Pettet on 01/11/2023.
+//
+//  Created by Garry Pettet on 07/11/2023.
 //
 
-import Foundation
-
-public struct ParserError: Error {    
+public struct CompilerError: Error {
     /// The location in the token stream that the error occurred.
     /// May be nil in the edge case that the parser was not initialised correctly.
     public let location: Token?
