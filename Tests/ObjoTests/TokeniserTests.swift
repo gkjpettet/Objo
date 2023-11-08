@@ -11,14 +11,14 @@ final class TokeniserTests: XCTestCase {
     }
 
     func testEmptySource() throws {
-       let tokens = try tokeniser.tokenise(source: "", scriptId: -1)
+       let tokens = try tokeniser.tokenise(source: "", scriptId: 0)
         
         XCTAssert(!tokens.isEmpty && tokens.last!.type == .eof)
     }
     
     /// Resetting the tokeniser should not affect the returned Token array.
     func testReturnedTokensAreIndependent() throws {
-        let tokens = try tokeniser.tokenise(source: "1 2 3", scriptId: -1)
+        let tokens = try tokeniser.tokenise(source: "1 2 3", scriptId: 0)
         
         XCTAssertTrue(tokens.count == 5)
         
@@ -31,7 +31,7 @@ final class TokeniserTests: XCTestCase {
     /// Tests binary literal tokenising.
     func testBinaryLiterals() throws {
         let source = "0b1001 + 0b0"
-        let tokens = try tokeniser.tokenise(source: source, scriptId: -1)
+        let tokens = try tokeniser.tokenise(source: source, scriptId: 0)
         
         XCTAssertTrue(tokens.count == 5)
         
@@ -47,7 +47,7 @@ final class TokeniserTests: XCTestCase {
     /// Tests hex literal tokenising.
     func testHexLiterals() throws {
         let source = "0xFF + 0xABC78"
-        let tokens = try tokeniser.tokenise(source: source, scriptId: -1)
+        let tokens = try tokeniser.tokenise(source: source, scriptId: 0)
         
         XCTAssertTrue(tokens.count == 5)
         
@@ -63,7 +63,7 @@ final class TokeniserTests: XCTestCase {
     /// Tests a mixture of integers, decimal numbers and numbers with exponents.
     func testNumbers() throws {
         let source = "1 + 2.1 + 3.456 + 4e2 + 5e-1 + 65e+2 + 7.1e3 + 8.7e-2 + 9.10e2 + 0"
-        let tokens = try tokeniser.tokenise(source: source, scriptId: -1)
+        let tokens = try tokeniser.tokenise(source: source, scriptId: 0)
         
         // 19 tokens.
         XCTAssertTrue(tokens.count == 21)
@@ -117,7 +117,7 @@ final class TokeniserTests: XCTestCase {
         "\\u0061" # a
         "\\u0062 \\u0063" # b c
         """
-        let tokens = try tokeniser.tokenise(source: source, scriptId: -1)
+        let tokens = try tokeniser.tokenise(source: source, scriptId: 0)
         
         XCTAssertTrue(tokens.count == 9)
         
@@ -132,7 +132,7 @@ final class TokeniserTests: XCTestCase {
         1 + 2
         "hello
         """
-        XCTAssertThrowsError(try tokeniser.tokenise(source: source, scriptId: -1)) { error in
+        XCTAssertThrowsError(try tokeniser.tokenise(source: source, scriptId: 0)) { error in
             let type = (error as? TokeniserError)?.type
             XCTAssertEqual(type, .syntaxError)
         }
@@ -140,7 +140,7 @@ final class TokeniserTests: XCTestCase {
     
     /// Expects an unexpected character error.
     func testUnexpectedCharacter() throws {
-        XCTAssertThrowsError(try tokeniser.tokenise(source: "@", scriptId: -1)) { error in
+        XCTAssertThrowsError(try tokeniser.tokenise(source: "@", scriptId: 0)) { error in
             let type = (error as? TokeniserError)?.type
             XCTAssertEqual(type, .unexpectedCharacter)
         }

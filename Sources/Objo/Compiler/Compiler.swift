@@ -20,8 +20,13 @@ public class Compiler {
     /// Optional data about the class currently being compiled. Will be nil if the compiler isn't currently compiling a class.
     private var currentClass: ClassData?
     
+    private var currentChunk: Chunk {
+        get { return self.function.chunk }
+        set(newValue) { self.function.chunk = newValue }
+    }
+    
     /// The token the compiler is currently compiling.
-    private var currentLocation: Token?
+    private var currentLocation: Token
     
     /// The current innermost loop being compiled, or `nil` if not in a loop.
     private var currentLoop: LoopData?
@@ -103,7 +108,7 @@ public class Compiler {
         self.isStaticMethod = isStaticMethod
         
         // Create a new function to compile into.
-        function = Function(name: name, parameters: parameters, isSetter: false, debugMode: debugMode)
+        function = try Function(name: name, parameters: parameters, isSetter: false, debugMode: debugMode)
         
         if self.type != .topLevel {
             beginScope()
@@ -114,8 +119,8 @@ public class Compiler {
             }
             
             for param in parameters {
-                declareVariable(identifier: param, initialised: false, trackAsGlobal: false)
-                defineVariable(index: 0) // The index value doesn't matter as the parameters are local.
+                try declareVariable(identifier: param, initialised: false, trackAsGlobal: false)
+                try defineVariable(index: 0) // The index value doesn't matter as the parameters are local.
             }
         }
         
@@ -155,10 +160,10 @@ public class Compiler {
         ast = []
         parseTime = 0
         
-        scopeDepth = 0
-        
         stopWatch.reset()
         compileTime = 0
+        
+        scopeDepth = 0
         
         // Locals
         locals = []
@@ -182,6 +187,110 @@ public class Compiler {
         scopeDepth += 1
     }
     
+    /// For local variables, this is the point at which the compiler records their existence.
+    ///
+    /// - Parameters:
+    ///     - identifier: The token representing the variable's name in the original source code.
+    ///     - initialised: If `true` then the compiler marks the local as initialised immediately (relevant for functions).
+    ///     - trackAsGlobal: If `true` then this variable is a global variable (cannot be shadowed).
+    private func declareVariable(identifier: Token, initialised: Bool, trackAsGlobal: Bool) throws {
+        currentLocation = identifier
+        
+        if trackAsGlobal {
+            if globalExists(name: identifier.lexeme!) {
+                try error(message: "Redefined global identifier `\(identifier.lexeme!)`.")
+            } else {
+                addGlobal(name: identifier.lexeme!)
+            }
+        }
+        
+        // If this is a global variable we're now done.
+        if scopeDepth == 0 { return }
+        
+        // Ensure that another variable has not been declared in current scope with this name.
+        let name = identifier.lexeme!
+        
+        
+        // TODO: Finish implementing.
+    }
+    
+    /// Defines a variable as ready to use.
+    ///
+    /// For globals it outputs the instructions required to define a global variable whose name is stored in the
+    /// constant pool at `index`.
+    /// For locals, it marks the variable as ready for use by setting its `depth` property to the current scope depth.
+    private func defineVariable(index: Int) throws {
+        if scopeDepth > 0 {
+            // Local variable definition.
+            if locals.count > 0 {
+                locals[locals.count - 1].depth = scopeDepth
+            }
+        } else {
+            // Global variable definition.
+            try emitVariableOpcode(shortOpcode: .defineGlobal, longOpcode: .defineGlobalLong, operand: index)
+        }
+    }
+    
+    /// Appends an opcode (UInt8) to the current chunk at the current location.
+    /// An optional `location` can be provided otherwise the compiler defaults to its current location.
+    private func emitOpcode(_ opcode: Opcode, location: Token? = nil) {
+        currentChunk.writeOpcode(opcode, token: location ?? currentLocation)
+    }
+    
+    /// Appends an opcode (UInt8) and an 8-bit operand to the current chunk at the current location.
+    /// An optional `location` can be provided otherwise the compiler defaults to its current location.
+    /// Assumes `operand` can be represented by a single byte.
+    private func emitOpcode8(opcode: Opcode, operand: UInt8, location: Token? = nil) {
+        let loc: Token = location ?? currentLocation
+        currentChunk.writeOpcode(opcode, token: loc)
+    }
+    
+    /// Appends an opcode (UInt8) and a 16-bit operand to the current chunk at the current location.
+    /// An optional `location` can be provided otherwise the compiler defaults to its current location.
+    /// Assumes `operand` can fit within two bytes.
+    private func emitOpcode16(opcode: Opcode, operand: UInt16, location: Token? = nil) {
+        emitOpcode(opcode, location: location ?? currentLocation)
+        emitUInt16(value: operand, location: location ?? currentLocation)
+    }
+    
+    /// Emits a return instruction, defaulting to returning `nothing` on function returns.
+    /// Defaults to the current location.
+    private func emitReturn(location: Token? = nil) {
+        if self.type == .constructor {
+            // Rather than return `nothing`, constructors must default to
+            // returning `this` which will be in slot 0 of the call frame.
+            emitOpcode8(opcode: .getLocal, operand: 0, location: location)
+        } else {
+            emitOpcode(.nothing, location: location)
+        }
+        
+        emitOpcode(.return_, location: location)
+    }
+    
+    /// Appends an unsigned integer (big endian format, most significant byte first) to the current chunk.
+    /// The current location is used unless otherwise specified.
+    private func emitUInt16(value: UInt16, location: Token? = nil) {
+        currentChunk.writeUInt16(value, location: location ?? currentLocation)
+    }
+    
+    /// Emits an opcode followed by `operand`. `
+    /// The operand may by one or two bytes in length. If `operand` is one byte then `shortOpcode` is emitted before the operand, otherwise `longOpcode` is emitted.
+    /// If `index <= 255` then `shortOpcode` is emitted followed by the single byte `index`.
+    /// Otherwise `longOpcode` is emitted followed by the two byte `index`.
+    private func emitVariableOpcode(shortOpcode: Opcode, longOpcode: Opcode, operand: Int, location: Token? = nil) throws {
+        if operand < 0 || operand > Chunk.MAX_CONSTANTS {
+            try error(message: "The operand is out of range. Expected `0 <= operand \(Chunk.MAX_CONSTANTS)`.", location: location ?? currentLocation)
+        }
+        
+        if operand <= 255 {
+            // We only need a single byte operand.
+            emitOpcode8(opcode: shortOpcode, operand: UInt8(operand), location: location ?? currentLocation)
+        } else {
+            // We need two bytes for the operand.
+            emitOpcode16(opcode: longOpcode, operand: UInt16(operand), location: location ?? currentLocation)
+        }
+    }
+    
     /// Internally called when the compiler is finished.
     /// The compiler needs to implictly return an appropriate value if the user did not explictly specify one.
     private func endCompiler(location: Token) {
@@ -190,7 +299,7 @@ public class Compiler {
             // We've just compiled an empty function.
             emitReturn(location: location)
             
-        } else if function.chunk.code.last! != Opcode.return_ {
+        } else if function.chunk.code.last! != Opcode.return_.rawValue {
             
             // The function's last instruction was *not* a return statement.
             emitReturn(location: location)

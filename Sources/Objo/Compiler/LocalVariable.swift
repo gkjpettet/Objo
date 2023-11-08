@@ -12,7 +12,7 @@ public struct LocalVariable {
     
     /// The scope depth of the block this variable was declared within.
     /// `-1` indicates the variable has not yet been initialised.
-    public let depth: Int
+    public var depth: Int
     
     /// The token in the source code representing this local variable's name (its identifier).
     public let identifier: Token

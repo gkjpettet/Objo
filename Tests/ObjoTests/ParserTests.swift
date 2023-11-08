@@ -14,7 +14,7 @@ final class ParserTests: XCTestCase {
 
     /// Tests parsing an empty source code input.
     func testEmptySource() throws {
-        let tokens = try tokeniser.tokenise(source: "", scriptId: -1)
+        let tokens = try tokeniser.tokenise(source: "", scriptId: 0)
         let ast = parser.parse(tokens: tokens)
         
         // Should produce an empty AST.
@@ -26,7 +26,7 @@ final class ParserTests: XCTestCase {
         var name = \"Garry\"
         var age
         """
-        let ast = try parser.parse(tokens: tokeniser.tokenise(source: source, scriptId: -1))
+        let ast = try parser.parse(tokens: tokeniser.tokenise(source: source, scriptId: 0))
         
         XCTAssertTrue(ast.count == 2)
         
