@@ -163,20 +163,30 @@ public class Parser {
         return GrammarRule(prefix: nil, infix: nil, precedence: .none)
     }
     
-    // MARK: - Instance properties
+    // MARK: - Private properties
     
     /// The abstract syntax tree being constructed by the parser.
-    private var _ast: [Stmt] = []
+    private var ast: [Stmt] = []
+    
     /// The token currently being evaluated.
-    private var _current: Token?
-    /// The index in `_tokens` of the token currently being processed.
-    private var _currentIndex: Int = -1
+    private var current: Token?
+    
+    /// The index in `tokens` of the token currently being processed.
+    private var currentIndex: Int = -1
+    
     /// Any errors that have occurred during the parsing process.
-    private var _errors: [ParserError] = []
+    private(set) var errors: [ParserError] = []
+    
     /// The previously evaluated token (will be `nil` when the parser begins).
     private var _previous: Token?
+    
     /// The array of tokens that this parser will process.
-    private var _tokens: [Token] = []
+    private var tokens: [Token] = []
+    
+    // MARK: - Public properties
+    
+    /// `true` if any errors occurred during the last parsing phase.
+    public var hasError: Bool { return errors.count > 0 }
     
     // MARK: - Public methods
     
@@ -193,7 +203,7 @@ public class Parser {
     ///
     /// Public so parselets can access it.
     public func check(_ type: TokenType) -> Bool {
-        if _current?.type == type { return true }
+        if current?.type == type { return true }
         return false
     }
 
@@ -203,7 +213,7 @@ public class Parser {
     /// Public so parselets can access it.
     public func check(_ types: TokenType...) -> Bool {
         for type in types {
-            if _current?.type == type { return true }
+            if current?.type == type { return true }
         }
         return false
     }
@@ -213,7 +223,7 @@ public class Parser {
     ///
     /// Public so parselets can access it.
     public func consume(_ expected: TokenType, message: String? = nil) throws {
-        guard let current = _current else {
+        guard let current = current else {
             throw ParserError(message: "Expected \(expected) but got an internal nil error instead.", location: nil)
         }
         
@@ -229,7 +239,7 @@ public class Parser {
     ///
     /// Public so parselets can access it.
     public func consume(_ expected: TokenType..., message: String? = nil) throws {
-        guard let current = _current else {
+        guard let current = current else {
             throw ParserError(message: "Internal nil value of the current token in the parser.", location: nil)
         }
         
@@ -260,7 +270,7 @@ public class Parser {
     /// Raises a `ParserError` at the current location. If the error is not at the current location,
     /// `location` may be passed instead.
     public func error(message: String, location: Token? = nil) throws {
-        throw ParserError(message: message, location: location ?? _current)
+        throw ParserError(message: message, location: location ?? current)
     }
     
     /// If the current token matches any of the types in `expected` then it's consumed and returned.
@@ -268,7 +278,7 @@ public class Parser {
     ///
     /// Public access so parselets can access it.
     public func fetch(_ expected: TokenType..., message: String? = nil) throws -> Token {
-        guard let current = _current else {
+        guard let current = current else {
             throw ParserError(message: "Internal nil value of the current token in the parser.", location: nil)
         }
         
@@ -314,14 +324,14 @@ public class Parser {
     public func parse(tokens: [Token]) -> [Stmt] {
         reset()
 
-        _tokens = tokens
+        self.tokens = tokens
 
         // Prime the pump to get the first token.
         advance()
 
         while !atEnd() {
             do {
-                _ast.append(try declaration())
+                ast.append(try declaration())
 
                 // Superfluous eol token?
                 _ = match(.endOfLine)
@@ -329,11 +339,11 @@ public class Parser {
                 panic(error)
             } catch {
                 // Unrecoverable error. Return the AST in its current state.
-                return _ast
+                return ast
             }
         }
 
-        return _ast
+        return ast
     }
     
     /// Parses and returns an expression at the given precedence level or higher.
@@ -347,7 +357,7 @@ public class Parser {
         
         // Get the prefix parselet.
         guard let prefix = rule?.prefix else {
-            throw ParserError(message: "Expected an expression. Instead got `\(_current!.type)`.", location: _current)
+            throw ParserError(message: "Expected an expression. Instead got `\(current!.type)`.", location: current)
         }
         
         // Track if the precedence of the surrounding expression is low enough to
@@ -363,7 +373,7 @@ public class Parser {
         var left = try prefix.parse(parser: self, canAssign: canAssign)
         
         // Get the precedence of the rule for the current token, defaulting to none if this token has no rule defined.
-        var rulePrecedence: Precedence = getRule(type: _current!.type) == nil ? .none : getRule(type: _current!.type)!.precedence
+        var rulePrecedence: Precedence = getRule(type: current!.type) == nil ? .none : getRule(type: current!.type)!.precedence
         
         // Keep parsing whilst the precedence is less that the current rule precedence.
         while precedence < rulePrecedence {
@@ -371,21 +381,21 @@ public class Parser {
             
             // Make sure there is an infix parselet for the current token.
             guard let infix = getRule(type: _previous!.type)!.infix else {
-                throw ParserError(message: "No infix rule for \(_previous!.type) token type.", location: _current)
+                throw ParserError(message: "No infix rule for \(_previous!.type) token type.", location: current)
             }
             
             // Parse the left hand expression.
             left = try infix.parse(parser: self, left: left, canAssign: canAssign)
             
             // Since the current token has changed, get the grammar rule for it.
-            let rule = getRule(type: _current!.type)
+            let rule = getRule(type: current!.type)
             
             // Figure out the precedence of the current rule.
             rulePrecedence = rule == nil ? .none : rule!.precedence
         }
         
         if canAssign && match(.equal) {
-            throw ParserError(message: "Invalid assignment target.", location: _current)
+            throw ParserError(message: "Invalid assignment target.", location: current)
         }
         
         return left
@@ -397,21 +407,21 @@ public class Parser {
     }
     
     public func reset() {
-        _ast = []
-        _current = nil
-        _currentIndex = -1
-        _errors = []
+        ast = []
+        current = nil
+        currentIndex = -1
+        errors = []
         _previous = nil
-        _tokens = []
+        tokens = []
     }
     
     // MARK: - Private methods
     
     /// Advances to the next token, storing a reference to the previous token in `_previous`.
     private func advance() {
-        _previous = _current
-        _currentIndex += 1
-        _current = _tokens[_currentIndex]
+        _previous = current
+        currentIndex += 1
+        current = tokens[currentIndex]
     }
     
     /// Parses an `assert` statement. Assumes the parser has just consumed the `assert` keyword.
@@ -440,7 +450,7 @@ public class Parser {
     
     /// returns `true` if we've reached the end of the token stream.
     private func atEnd() -> Bool {
-        return _currentIndex >= _tokens.count || _current?.type == .eof
+        return currentIndex >= tokens.count || current?.type == .eof
     }
     
     /// Parses a block of statements.
@@ -501,7 +511,7 @@ public class Parser {
         var superclass: String?
         if match(.is_) {
             // Edge case: Attempting to inherit from a built-in type.
-            if Parser.notInheritable.contains(_current!.lexeme!) {
+            if Parser.notInheritable.contains(current!.lexeme!) {
                 try error(message: "Classes cannot inherit from built-in types.")
             }
             superclass = try fetch(.uppercaseIdentifier, message: "Expected a superclass name beginning with an uppercase letter.").lexeme
@@ -703,7 +713,7 @@ public class Parser {
         ditch(.endOfLine)
         
         // Store the location of the start of the expression.
-        let location = _current!
+        let location = current!
         
         // Consume the expression.
         let expr = try expression()
@@ -1026,7 +1036,7 @@ public class Parser {
     /// `error` contains details of the error that triggered panic mode.
     private func panic(_ error: ParserError) {
         // Add this to our array of errors already encountered.
-        _errors.append(error)
+        errors.append(error)
         
         // Try to recover.
         synchronise()
@@ -1175,7 +1185,7 @@ public class Parser {
         advance()
         
         while !atEnd() {
-            switch _current?.type {
+            switch current?.type {
             case .class_, .function:
                 // Hopefully we're synchronised now.
                 return

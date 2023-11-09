@@ -27,7 +27,7 @@ public struct ForStmt: Stmt {
         self.location = forKeyword
     }
     
-    public func accept(_ visitor: StmtVisitor) {
-        visitor.visitFor(stmt: self)
+    public func accept(_ visitor: StmtVisitor) throws {
+        try visitor.visitFor(stmt: self)
     }
 }

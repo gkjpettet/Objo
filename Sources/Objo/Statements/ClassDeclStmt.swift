@@ -45,7 +45,7 @@ public struct ClassDeclStmt: Stmt {
         
     }
     
-    public func accept(_ visitor: StmtVisitor) {
-        visitor.visitClassDeclaration(stmt: self)
+    public func accept(_ visitor: StmtVisitor) throws {
+        try visitor.visitClassDeclaration(stmt: self)
     }
 }

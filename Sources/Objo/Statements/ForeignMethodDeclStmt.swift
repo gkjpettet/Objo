@@ -39,7 +39,7 @@ public struct ForeignMethodDeclStmt: Stmt {
         }
     }
     
-    public func accept(_ visitor: StmtVisitor) {
-        visitor.visitForeignMethodDeclaration(stmt: self)
+    public func accept(_ visitor: StmtVisitor) throws {
+        try visitor.visitForeignMethodDeclaration(stmt: self)
     }
 }

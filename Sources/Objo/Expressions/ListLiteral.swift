@@ -18,7 +18,7 @@ public struct ListLiteral: Expr {
         self.elements = elements
     }
     
-    public func accept(_ visitor: ExprVisitor) {
-        visitor.visitListLiteral(expr: self)
+    public func accept(_ visitor: ExprVisitor) throws {
+        try visitor.visitListLiteral(expr: self)
     }
 }

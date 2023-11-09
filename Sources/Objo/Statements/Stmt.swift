@@ -12,5 +12,5 @@ public protocol Stmt {
     var location: Token { get }
     
     /// Accepts a visitor.
-    func accept(_ visitor: StmtVisitor)
+    func accept(_ visitor: StmtVisitor) throws
 }

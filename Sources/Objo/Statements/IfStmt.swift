@@ -24,7 +24,7 @@ public struct IfStmt: Stmt {
         self.location = ifKeyword
     }
     
-    public func accept(_ visitor: StmtVisitor) {
-        visitor.visitIf(stmt: self)
+    public func accept(_ visitor: StmtVisitor) throws {
+        try visitor.visitIf(stmt: self)
     }
 }

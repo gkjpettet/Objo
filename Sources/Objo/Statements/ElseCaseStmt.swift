@@ -18,7 +18,7 @@ public struct ElseCaseStmt: Stmt {
         self.location = keyword
     }
     
-    public func accept(_ visitor: StmtVisitor) {
-        visitor.visitElseCase(stmt: self)
+    public func accept(_ visitor: StmtVisitor) throws {
+        try visitor.visitElseCase(stmt: self)
     }
 }

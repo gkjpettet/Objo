@@ -15,7 +15,7 @@ public struct ContinueStmt: Stmt {
         self.location = keyword
     }
     
-    public func accept(_ visitor: StmtVisitor) {
-        visitor.visitContinue(stmt: self)
+    public func accept(_ visitor: StmtVisitor) throws {
+        try visitor.visitContinue(stmt: self)
     }
 }

@@ -13,8 +13,8 @@ public struct ExpressionStmt: Stmt {
     /// The first token of this expression.
     public var location: Token
     
-    public func accept(_ visitor: StmtVisitor) {
-        visitor.visitExpressionStmt(stmt: self)
+    public func accept(_ visitor: StmtVisitor) throws {
+        try visitor.visitExpressionStmt(stmt: self)
     }
     
     public init(expression: Expr, location: Token) {

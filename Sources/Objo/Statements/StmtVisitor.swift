@@ -8,25 +8,25 @@
 import Foundation
 
 public protocol StmtVisitor {
-    func visitAssertStmt(stmt: AssertStmt)
-    func visitBlock(stmt: BlockStmt)
-    func visitBreakpoint(stmt: BreakpointStmt)
-    func visitCase(stmt: CaseStmt)
-    func visitClassDeclaration(stmt: ClassDeclStmt)
-    func visitConstructorDeclaration(stmt: ConstructorDeclStmt)
-    func visitContinue(stmt: ContinueStmt)
-    func visitDo(stmt: DoStmt)
-    func visitElseCase(stmt: ElseCaseStmt)
-    func visitExit(stmt: ExitStmt)
-    func visitExpressionStmt(stmt: ExpressionStmt)
-    func visitFor(stmt: ForStmt)
-    func visitForEach(stmt: ForEachStmt)
-    func visitForeignMethodDeclaration(stmt: ForeignMethodDeclStmt)
-    func visitFuncDeclaration(stmt: FunctionDeclStmt)
-    func visitIf(stmt: IfStmt)
-    func visitMethodDeclaration(stmt: MethodDeclStmt)
-    func visitReturn(stmt: ReturnStmt)
-    func visitSwitch(stmt: SwitchStmt)
-    func visitVarDeclaration(stmt: VarDeclStmt)
-    func visitWhile(stmt: WhileStmt)
+    func visitAssertStmt(stmt: AssertStmt) throws
+    func visitBlock(stmt: BlockStmt) throws
+    func visitBreakpoint(stmt: BreakpointStmt) throws
+    func visitCase(stmt: CaseStmt) throws
+    func visitClassDeclaration(stmt: ClassDeclStmt) throws
+    func visitConstructorDeclaration(stmt: ConstructorDeclStmt) throws
+    func visitContinue(stmt: ContinueStmt) throws
+    func visitDo(stmt: DoStmt) throws
+    func visitElseCase(stmt: ElseCaseStmt) throws
+    func visitExit(stmt: ExitStmt) throws
+    func visitExpressionStmt(stmt: ExpressionStmt) throws
+    func visitFor(stmt: ForStmt) throws
+    func visitForEach(stmt: ForEachStmt) throws
+    func visitForeignMethodDeclaration(stmt: ForeignMethodDeclStmt) throws
+    func visitFuncDeclaration(stmt: FunctionDeclStmt) throws
+    func visitIf(stmt: IfStmt) throws
+    func visitMethodDeclaration(stmt: MethodDeclStmt) throws
+    func visitReturn(stmt: ReturnStmt) throws
+    func visitSwitch(stmt: SwitchStmt) throws
+    func visitVarDeclaration(stmt: VarDeclStmt) throws
+    func visitWhile(stmt: WhileStmt) throws
 }

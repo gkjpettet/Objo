@@ -21,7 +21,7 @@ public struct KeyValueExpr: Expr {
         self.value = value
     }
     
-    public func accept(_ visitor: ExprVisitor) {
-        visitor.visitKeyValue(expr: self)
+    public func accept(_ visitor: ExprVisitor) throws {
+        try visitor.visitKeyValue(expr: self)
     }
 }

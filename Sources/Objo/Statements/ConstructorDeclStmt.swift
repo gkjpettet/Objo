@@ -30,7 +30,7 @@ public struct ConstructorDeclStmt: Stmt {
         self.signature = try Objo.computeSignature(name: "constructor", arity: arity, isSetter: false)
     }
     
-    public func accept(_ visitor: StmtVisitor) {
-        visitor.visitConstructorDeclaration(stmt: self)
+    public func accept(_ visitor: StmtVisitor) throws {
+        try visitor.visitConstructorDeclaration(stmt: self)
     }
 }

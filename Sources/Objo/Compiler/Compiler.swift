@@ -7,48 +7,63 @@
 
 import Foundation
 
-public class Compiler {
+public class Compiler: ExprVisitor, StmtVisitor {
+        
+    // MARK: - Class constants
+    
+    /// The script ID value the compiler uses for the core library.
+    public static let CORE_LIBRARY_SCRIPT_ID: Int = -1
+    
+    /// The script ID used by the compiler for the synthetic opening and closing braces around the `*main*` function.
+    public static let MAIN_SCRIPT_ID = -2
+    
+    /// The maximum number of local variables that can be in scope at one time.
+    /// Limited to one byte due to the instruction's operand size.
+    private static let MAX_LOCALS = 256
     
     // MARK: - Private properties.
     
     /// The abstract syntax tree this compiler is compiling.
-    private var ast: [Stmt]
+    private var ast: [Stmt] = []
     
     /// The time take for the last compilation took.
     private var compileTime: TimeInterval?
+    
+    /// The core library source code.
+    private var coreLibrarySource: String
     
     /// Optional data about the class currently being compiled. Will be nil if the compiler isn't currently compiling a class.
     private var currentClass: ClassData?
     
     private var currentChunk: Chunk {
-        get { return self.function.chunk }
-        set(newValue) { self.function.chunk = newValue }
+        get { return self.function!.chunk }
+        set(newValue) { self.function!.chunk = newValue }
     }
     
     /// The token the compiler is currently compiling.
-    private var currentLocation: Token
+    private var currentLocation: Token?
     
     /// The current innermost loop being compiled, or `nil` if not in a loop.
     private var currentLoop: LoopData?
     
     /// If `true` then the compiler will output debug-quality bytecode.
-    private var debugMode: Bool
+    private var debugMode: Bool = false
     
     /// `true` if this compiler is compiling a static method.
     private var isStaticMethod = false
     
     /// Contains the names of every global variable declared as the key. Only the outermost compiler keeps track of declared variables. Child compilers, add new globals to the outermost parent. Therefore this may be empty even if there are known globals.
     /// Key = global name, Value = Bool (unused, set to `false`).
-    private(set) var knownGlobals: [String : Bool]
+    private(set) var knownGlobals: [String : Bool] = [:]
     
     /// The classes already compiled by the compiler. Key = class name.
-    private(set) var knownClasses: [String : ClassData]
+    private(set) var knownClasses: [String : ClassData] = [:]
     
     /// The local variables that are in scope.
-    private(set) var locals: [LocalVariable]
+    private(set) var locals: [LocalVariable] = []
     
     /// This compiler's internal parser.
-    private var parser: Parser
+    private var parser: Parser = Parser()
     
     /// The time taken for the last parsing phase.
     private var parseTime: TimeInterval?
@@ -60,13 +75,13 @@ public class Compiler {
     private var stopWatch: Stopwatch = Stopwatch()
     
     /// This compiler's internal lexer.
-    private var tokeniser: Tokeniser
+    private var tokeniser: Tokeniser = Tokeniser()
     
     /// The time taken for the last tokenising phase.
     private var tokeniseTime: TimeInterval?
     
     /// The tokens this compiler is compiling. May be empty if the compiler was instructed to compile an AST directly.
-    private var tokens: [Token]
+    private var tokens: [Token] = []
     
     // MARK: - Public properties
     
@@ -74,10 +89,28 @@ public class Compiler {
     public var enclosing: Compiler?
     
     /// The function currently being compiled.
-    public var function: Function
+    public var function: Function?
+    
+    /// The outermost compiler. This is the compiler compiling the main function. It may be **this** compiler.
+    public var outermostCompiler: Compiler {
+        var outermost = self
+        while outermost.enclosing != nil {
+            outermost = outermost.enclosing!
+        }
+        return outermost
+    }
     
     /// The type of function currently being compiled.
     public var type: FunctionType = .topLevel
+    
+    // MARK: - Initialiser
+    
+    /// Instantiates a new compiler.
+    /// `coreLibrarySource` is the source code for the core library.
+    /// This will be compiled before any user source code.
+    public init(coreLibrarySource: String) {
+        self.coreLibrarySource = coreLibrarySource
+    }
     
     // MARK: - Public methods
     
@@ -126,7 +159,7 @@ public class Compiler {
         
         // Compile the function's body.
         for stmt in body.statements {
-            stmt.accept(self)
+            try stmt.accept(self)
         }
         
         // Determine the end location for this AST.
@@ -147,7 +180,62 @@ public class Compiler {
         stopWatch.stop()
         compileTime = stopWatch.elapsedTime()
         
-        return function
+        return function!
+    }
+    
+    /// Compiles raw Objo source code into a top level function.
+    /// Prepends the code with the core library source code provide during this compiler's instantiation.
+    ///
+    /// - Throws `TokeniserError` if an error occurs during tokenisation.
+    /// - Throws `ParserError` if a parsing error occurs.
+    /// - Throws `CompilerError` if a compiling error occurs.
+    public func compile(source: String, debugMode: Bool, scriptID: Int) throws -> Function {
+        reset()
+        
+        self.debugMode = debugMode
+        
+        // Import and tokenise the core libraries first.
+        tokens = try tokeniser.tokenise(source: coreLibrarySource, scriptId: Compiler.CORE_LIBRARY_SCRIPT_ID, includeEOF: false)
+        
+        // Tokenise the user's source code. This may throw a TokeniserError, therefore aborting compilation.
+        stopWatch.start()
+        let userTokens: [Token] = try tokeniser.tokenise(source: source, scriptId: scriptID)
+        stopWatch.stop()
+        tokeniseTime = stopWatch.elapsedTime()
+        
+        // Append the user's tokens to the core tokens.
+        tokens.append(contentsOf: userTokens)
+        
+        // Parse.
+        stopWatch.reset()
+        stopWatch.start()
+        ast = parser.parse(tokens: tokens)
+        stopWatch.stop()
+        parseTime = stopWatch.elapsedTime()
+        
+        if parser.hasError {
+            var message = ""
+            if parser.errors.count == 1 {
+                message = parser.errors[0].message
+            } else {
+                message = "\(parser.errors.count) parsing errors occurred."
+            }
+            throw ParserError(message: message, location: parser.errors[0].location)
+        }
+        
+        // Compile the top level `*main*` function.
+        // Synthesise tokens for the opening and closing curly braces.
+        let openingBrace = BaseToken(type: .lcurly, start: 0, line: 0, lexeme: nil, scriptId: Compiler.MAIN_SCRIPT_ID)
+        let closingBrace = BaseToken(type: .rcurly, start: 0, line: 0, lexeme: nil, scriptId: Compiler.MAIN_SCRIPT_ID)
+        
+        // The `*main*` function has no parameters.
+        let mainParams: [Token] = []
+        
+        // Synthesise the main function's body.
+        let mainBody = BlockStmt(statements: ast, openingBrace: openingBrace, closingBrace: closingBrace)
+        
+        // Compile and return the function.
+        return try compile(name: "*main*", parameters: mainParams, body: mainBody, type: .topLevel, currentClass: nil, isStaticMethod: false, debugMode: debugMode, shouldReset: false, enclosingCompiler: nil)
     }
     
     /// Resets the compiler so it's ready to compile again.
@@ -182,6 +270,22 @@ public class Compiler {
     
     // MARK: - Private methods
     
+    /// Tracks the existence of a global variable named `name`.
+    private func addGlobal(name: String) {
+        // Only the outermost compiler stores the names of defined globals.
+        outermostCompiler.knownGlobals[name] = false
+    }
+    
+    /// Tracks a local variable in the current scope.
+    private func addLocal(identifier: Token, initialised: Bool = false) throws {
+        if locals.count >= Compiler.MAX_LOCALS {
+            try error(message: "Too many local variables in scope.")
+        }
+        
+        // Set the local's depth to `-1` if not yet initialised.
+        locals.append(LocalVariable(identifier: identifier, depth: initialised ? scopeDepth : -1))
+    }
+    
     /// Begins a new scope.
     private func beginScope() {
         scopeDepth += 1
@@ -209,9 +313,18 @@ public class Compiler {
         
         // Ensure that another variable has not been declared in current scope with this name.
         let name = identifier.lexeme!
+        for local in locals.reversed() {
+            if local.depth != -1 && local.depth < scopeDepth {
+                break
+            }
+            
+            if name == local.name {
+                try error(message: "Redefined variable `\(name)`.")
+            }
+        }
         
-        
-        // TODO: Finish implementing.
+        // Must be a local variable. Add it to the list of variables in the current scope.
+        try addLocal(identifier: identifier, initialised: initialised)
     }
     
     /// Defines a variable as ready to use.
@@ -234,14 +347,14 @@ public class Compiler {
     /// Appends an opcode (UInt8) to the current chunk at the current location.
     /// An optional `location` can be provided otherwise the compiler defaults to its current location.
     private func emitOpcode(_ opcode: Opcode, location: Token? = nil) {
-        currentChunk.writeOpcode(opcode, token: location ?? currentLocation)
+        currentChunk.writeOpcode(opcode, token: location ?? currentLocation!)
     }
     
     /// Appends an opcode (UInt8) and an 8-bit operand to the current chunk at the current location.
     /// An optional `location` can be provided otherwise the compiler defaults to its current location.
     /// Assumes `operand` can be represented by a single byte.
     private func emitOpcode8(opcode: Opcode, operand: UInt8, location: Token? = nil) {
-        let loc: Token = location ?? currentLocation
+        let loc: Token = location ?? currentLocation!
         currentChunk.writeOpcode(opcode, token: loc)
     }
     
@@ -270,7 +383,7 @@ public class Compiler {
     /// Appends an unsigned integer (big endian format, most significant byte first) to the current chunk.
     /// The current location is used unless otherwise specified.
     private func emitUInt16(value: UInt16, location: Token? = nil) {
-        currentChunk.writeUInt16(value, location: location ?? currentLocation)
+        currentChunk.writeUInt16(value, token: location ?? currentLocation!)
     }
     
     /// Emits an opcode followed by `operand`. `
@@ -294,12 +407,12 @@ public class Compiler {
     /// Internally called when the compiler is finished.
     /// The compiler needs to implictly return an appropriate value if the user did not explictly specify one.
     private func endCompiler(location: Token) {
-        if function.chunk.code.count == 0 {
+        if function!.chunk.code.count == 0 {
             
             // We've just compiled an empty function.
             emitReturn(location: location)
             
-        } else if function.chunk.code.last! != Opcode.return_.rawValue {
+        } else if function!.chunk.code.last! != Opcode.return_.rawValue {
             
             // The function's last instruction was *not* a return statement.
             emitReturn(location: location)
@@ -311,5 +424,269 @@ public class Compiler {
     /// If the error is not at the current location, `location` may be passed instead.
     private func error(message: String, location: Token? = nil) throws {
         throw CompilerError(message: message, location: location ?? currentLocation)
+    }
+    
+    /// Returns `true` if a global variable named `name` has already been defined by this compiler chain.
+    private func globalExists(name: String) -> Bool {
+        return outermostCompiler.knownGlobals[name] != nil
+    }
+    
+    // MARK: - `ExprVisitor` protocol methods
+    
+    public func visitAssignment(expr: AssignmentExpr) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling assignment is not yet implemented", location: expr.location)
+    }
+    
+    public func visitBareInvocation(expr: BareInvocationExpr) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling bare invocations is not yet implemented", location: expr.location)
+    }
+    
+    public func visitBareSuperInvocation(expr: BareSuperInvocationExpr) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling bare super invocations is not yet implemented", location: expr.location)
+    }
+    
+    public func visitBinary(expr: BinaryExpr) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling binary expressions is not yet implemented", location: expr.location)
+    }
+    
+    public func visitBoolean(expr: BooleanLiteral) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling boolean literals is not yet implemented", location: expr.location)
+    }
+    
+    public func visitCall(expr: CallExpr) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling call expressions is not yet implemented", location: expr.location)
+    }
+    
+    public func visitClass(expr: ClassExpr) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling class expressions is not yet implemented", location: expr.location)
+    }
+    
+    public func visitField(expr: FieldExpr) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling field access is not yet implemented", location: expr.location)
+    }
+    
+    public func visitFieldAssignment(expr: FieldAssignmentExpr) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling field assignment is not yet implemented", location: expr.location)
+    }
+    
+    public func visitKeyValue(expr: KeyValueExpr) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling key-value expressions is not yet implemented", location: expr.location)
+    }
+    
+    public func visitListLiteral(expr: ListLiteral) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling list literals is not yet implemented", location: expr.location)
+    }
+    
+    public func visitLogical(expr: LogicalExpr) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling logical expressions is not yet implemented", location: expr.location)
+    }
+    
+    public func visitMethodInvocation(expr: MethodInvocationExpr) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling method invocations is not yet implemented", location: expr.location)
+    }
+    
+    public func visitIs(expr: IsExpr) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling `is` expressions is not yet implemented", location: expr.location)
+    }
+    
+    public func visitMapLiteral(expr: MapLiteral) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling map literals is not yet implemented", location: expr.location)
+    }
+    
+    public func visitNothing(expr: NothingLiteral) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling `nothing` literals` is not yet implemented", location: expr.location)
+    }
+    
+    public func visitNumber(expr: NumberLiteral) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling number literals is not yet implemented", location: expr.location)
+    }
+    
+    public func visitPostfix(expr: PostfixExpr) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling postfix expressions is not yet implemented", location: expr.location)
+    }
+    
+    public func visitRange(expr: RangeExpr) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling range expressions is not yet implemented", location: expr.location)
+    }
+    
+    public func visitStaticField(expr: StaticFieldExpr) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling static field access is not yet implemented", location: expr.location)
+    }
+    
+    public func visitStaticFieldAssignment(expr: StaticFieldAssignmentExpr) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling static field assignment is not yet implemented", location: expr.location)
+    }
+    
+    public func visitString(expr: StringLiteral) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling string literals is not yet implemented", location: expr.location)
+    }
+    
+    public func visitSubscript(expr: SubscriptExpr) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling subscript expressions is not yet implemented", location: expr.location)
+    }
+    
+    public func visitSubscriptSetter(expr: SubscriptSetterExpr) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling subscript setter expressions is not yet implemented", location: expr.location)
+    }
+    
+    public func visitSuperMethodInvocation(expr: SuperMethodInvocationExpr) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling super method invocations is not yet implemented", location: expr.location)
+    }
+    
+    public func visitSuperSetter(expr: SuperSetterExpr) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling super setter expressions is not yet implemented", location: expr.location)
+    }
+    
+    public func visitTernary(expr: TernaryExpr) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling ternary expressions is not yet implemented", location: expr.location)
+    }
+    
+    public func visitThis(expr: ThisExpr) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling this expressions is not yet implemented", location: expr.location)
+    }
+    
+    public func visitUnary(expr: UnaryExpr) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling unary expressions is not yet implemented", location: expr.location)
+    }
+    
+    public func visitVariable(expr: VariableExpr) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling variable access is not yet implemented", location: expr.location)
+    }
+    
+    // MARK: - `StmtVisitor` protocol methods
+    
+    public func visitAssertStmt(stmt: AssertStmt) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling assert statements is not yet implemented", location: stmt.location)
+    }
+    
+    public func visitBlock(stmt: BlockStmt) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling blocks is not yet implemented", location: stmt.location)
+    }
+    
+    public func visitBreakpoint(stmt: BreakpointStmt) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling breakpoints is not yet implemented", location: stmt.location)
+    }
+    
+    public func visitCase(stmt: CaseStmt) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling case statements is not yet implemented", location: stmt.location)
+    }
+    
+    public func visitClassDeclaration(stmt: ClassDeclStmt) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling class declarations is not yet implemented", location: stmt.location)
+    }
+    
+    public func visitConstructorDeclaration(stmt: ConstructorDeclStmt) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling constructors is not yet implemented", location: stmt.location)
+    }
+    
+    public func visitContinue(stmt: ContinueStmt) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling continue statements is not yet implemented", location: stmt.location)
+    }
+    
+    public func visitDo(stmt: DoStmt) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling `do` statements is not yet implemented", location: stmt.location)
+    }
+    
+    public func visitElseCase(stmt: ElseCaseStmt) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling else cases is not yet implemented", location: stmt.location)
+    }
+    
+    public func visitExit(stmt: ExitStmt) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling exit statements is not yet implemented", location: stmt.location)
+    }
+    
+    public func visitExpressionStmt(stmt: ExpressionStmt) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling expression statements is not yet implemented", location: stmt.location)
+    }
+    
+    public func visitFor(stmt: ForStmt) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling `for` statements is not yet implemented", location: stmt.location)
+    }
+    
+    public func visitForEach(stmt: ForEachStmt) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling `foreach` statements is not yet implemented", location: stmt.location)
+    }
+    
+    public func visitForeignMethodDeclaration(stmt: ForeignMethodDeclStmt) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling foreign method declarations is not yet implemented", location: stmt.location)
+    }
+    
+    public func visitFuncDeclaration(stmt: FunctionDeclStmt) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling function declarations is not yet implemented", location: stmt.location)
+    }
+    
+    public func visitIf(stmt: IfStmt) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling `if` statements is not yet implemented", location: stmt.location)
+    }
+    
+    public func visitMethodDeclaration(stmt: MethodDeclStmt) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling method declarations is not yet implemented", location: stmt.location)
+    }
+    
+    public func visitReturn(stmt: ReturnStmt) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling return statements is not yet implemented", location: stmt.location)
+    }
+    
+    public func visitSwitch(stmt: SwitchStmt) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling switch statements is not yet implemented", location: stmt.location)
+    }
+    
+    public func visitVarDeclaration(stmt: VarDeclStmt) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling variable declarations is not yet implemented", location: stmt.location)
+    }
+    
+    public func visitWhile(stmt: WhileStmt) throws {
+        // TODO: Implement.
+        throw CompilerError(message: "Compiling while statements is not yet implemented", location: stmt.location)
     }
 }

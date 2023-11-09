@@ -36,10 +36,10 @@ public class ClassData {
     public init(declaration: ClassDeclStmt, superclass: ClassData?) {
         self.declaration = declaration
         
+        self.superclass = superclass
         if superclass == nil {
             fieldStartIndex = 0
         } else {
-            self.superclass = superclass
             fieldStartIndex = self.superclass!.fieldStartIndex + self.superclass!.fieldCount
         }
     }

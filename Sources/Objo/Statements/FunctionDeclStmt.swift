@@ -24,7 +24,7 @@ public struct FunctionDeclStmt: Stmt {
         self.location = funcKeyword
     }
     
-    public func accept(_ visitor: StmtVisitor) {
-        visitor.visitFuncDeclaration(stmt: self)
+    public func accept(_ visitor: StmtVisitor) throws {
+        try visitor.visitFuncDeclaration(stmt: self)
     }
 }

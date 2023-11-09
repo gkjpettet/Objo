@@ -21,7 +21,7 @@ public struct DoStmt: Stmt {
         self.location = keyword
     }
     
-    public func accept(_ visitor: StmtVisitor) {
-        visitor.visitDo(stmt: self)
+    public func accept(_ visitor: StmtVisitor) throws {
+        try visitor.visitDo(stmt: self)
     }
 }

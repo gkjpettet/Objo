@@ -15,7 +15,7 @@ public struct ExitStmt: Stmt {
         self.location = exitKeyword
     }
     
-    public func accept(_ visitor: StmtVisitor) {
-        visitor.visitExit(stmt: self)
+    public func accept(_ visitor: StmtVisitor) throws {
+        try visitor.visitExit(stmt: self)
     }
 }

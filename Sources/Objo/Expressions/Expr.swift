@@ -12,5 +12,5 @@ public protocol Expr {
     var location: Token { get }
     
     /// Accepts a visitor.
-    func accept(_ visitor: ExprVisitor)
+    func accept(_ visitor: ExprVisitor) throws
 }

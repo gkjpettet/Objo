@@ -21,7 +21,7 @@ public struct IsExpr: Expr {
         self.location = isKeyword
     }
     
-    public func accept(_ visitor: ExprVisitor) {
-        visitor.visitIs(expr: self)
+    public func accept(_ visitor: ExprVisitor) throws {
+        try visitor.visitIs(expr: self)
     }
 }

@@ -24,7 +24,7 @@ public struct ForEachStmt: Stmt {
         self.body = body
     }
     
-    public func accept(_ visitor: StmtVisitor) {
-        visitor.visitForEach(stmt: self)
+    public func accept(_ visitor: StmtVisitor) throws {
+        try visitor.visitForEach(stmt: self)
     }
 }

@@ -61,4 +61,22 @@ public struct Chunk {
         lines.append(token.line)
         scriptID.append(token.scriptId)
     }
+    
+    /// Writes an unsigned 16-bit integer to this chunk's bytecode array.
+    ///
+    /// - Parameter token: The parser token that generated this byte of data.
+    /// The integer is written in big endian format (most significant byte first).
+    /// We write the high byte, then the low byte.
+    mutating public func writeUInt16(_ i16: UInt16, token: Token) {
+        let msb = UInt8((i16 & 0xFF00) >> 8)
+        let lsb = UInt8(i16 & 0x00FF)
+        code.append(msb)
+        code.append(lsb)
+        
+        // Write twice as we're writing two bytes.
+        lines.append(token.line)
+        lines.append(token.line)
+        scriptID.append(token.scriptId)
+        scriptID.append(token.scriptId)
+    }
 }
