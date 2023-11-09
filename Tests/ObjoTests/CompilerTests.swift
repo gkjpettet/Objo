@@ -18,6 +18,7 @@ final class CompilerTests: XCTestCase {
 //            let function = try compiler.compile(source: source, debugMode: true, scriptID: 0)
 //            var offset = 0
 //            let bytecode = try disassembler.disassembleFunction(function: function)
+//            print(bytecode)
 //            XCTAssertTrue(bytecode != "")
 //        } catch {
 //            print("\(error)")

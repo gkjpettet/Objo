@@ -38,20 +38,47 @@ public struct Disassembler {
         }
         
         switch opcode {
-        case .constant:
-            return try constantInstruction(opcode: opcode, chunk: chunk, instructionName: "CONSTANT", offset: &offset)
+        case .constant, .constantLong, .defineGlobal, .defineGlobalLong, .getGlobal, .getGlobalLong, .getStaticField, .getStaticFieldLong, .setGlobal, .setGlobalLong, .setStaticField, .setStaticFieldLong:
+            return try constantInstruction(opcode: opcode, chunk: chunk, offset: &offset)
             
-        case .constantLong:
-            return try constantInstruction(opcode: opcode, chunk: chunk, instructionName: "CONSTANT_LONG", offset: &offset)
+        case .add, .add1, .assert, .bitwiseAnd, .bitwiseOr, .bitwiseXor, .breakpoint, .defineNothing, .divide, .equal, .exit, .false_, .greater, .greaterEqual, .inherit, .is_, .keyValue, .less, .lessEqual, .load0, .load1, .load2, .loadMinus1, .loadMinus2, .logicalXor, .multiply, .modulo, .negate, .not, .notEqual, .nothing, .pop, .return_, .rangeExclusive, .rangeInclusive, .shiftLeft, .shiftRight, .subtract, .subtract1, .swap, .true_:
+            return simpleInstruction(opcode: opcode, offset: &offset)
             
-        case .nothing:
-            return simpleInstruction(name: "NOTHING", offset: &offset)
+        case .call, .constructor, .getLocalClass, .list, .map, .popN, .getLocal, .setLocal:
+            return instruction8bitOperand(opcode: opcode, chunk: chunk, offset: &offset)
             
-        case .pop:
-            return simpleInstruction(name: "POP", offset: &offset)
+        case .class_:
+            return classInstruction(chunk: chunk, offset: &offset)
             
-        case .return_:
-            return simpleInstruction(name: "RETURN", offset: &offset)
+        case.debugFieldName:
+            return debugFieldName(chunk: chunk, offset: &offset)
+            
+        case .getField, .setField:
+            return fieldInstruction(opcode: opcode, chunk: chunk, offset: &offset)
+            
+        case .invoke, .invokeLong:
+            return invokeInstruction(opcode: opcode, chunk: chunk, offset: &offset)
+            
+        case .jump, .jumpIfFalse, .jumpIfTrue:
+            return jumpInstruction(opcode: opcode, negative: false, chunk: chunk, offset: &offset)
+            
+        case .localVarDeclaration:
+            return localVarDeclaration(chunk: chunk, offset: &offset)
+            
+        case .loop:
+            return jumpInstruction(opcode: opcode, negative: true, chunk: chunk, offset: &offset)
+            
+        case .method, .foreignMethod:
+            return methodInstruction(opcode: opcode, chunk: chunk, offset: &offset)
+            
+        case .superConstructor:
+            return superConstructor(chunk: chunk, offset: &offset)
+            
+        case .superInvoke:
+            return superInvoke(chunk: chunk, offset: &offset)
+            
+        case .superSetter:
+            return superSetter(chunk: chunk, offset: &offset)
             
         default:
             throw DisassemblerError.unknownOpcode(opcode: opcode, offset: offset)
@@ -66,8 +93,8 @@ public struct Disassembler {
     /// Some instructions use a single byte operand, others use a two byte operand. The operand is the index of the constant in the constant pool.
     /// Format:
     /// `INSTRUCTION_NAME  POOL_INDEX  CONSTANT_VALUE`
-    private func constantInstruction(opcode: Opcode, chunk: Chunk, instructionName: String, offset: inout Int) throws -> String {
-        var name = instructionName
+    private func constantInstruction(opcode: Opcode, chunk: Chunk, offset: inout Int) throws -> String {
+        var name = String(describing: opcode).replacingOccurrences(of: "_", with: "")
         
        // Get the index of the constant.
         var constantIndex: Int
@@ -109,13 +136,32 @@ public struct Disassembler {
         return details
     }
     
+    /// Returns the details of an instruction (at `offset`) that takes a single byte operand
+    /// Increments `offset` to point to the next instruction.
+    ///
+    /// Format:
+    /// `INSTRUCTION_NAME  OPERAND_VALUE`
+    private func instruction8bitOperand(opcode: Opcode, chunk: Chunk, offset: inout Int) -> String {
+        // The instruction's name.
+        let name = String(describing: opcode).replacingOccurrences(of: "_", with: "").padding(toLength: 2 * COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        
+        // Append the operand's value.
+        let operand = chunk.readByte(offset: offset + 1)
+        let details = name + String(operand).padding(toLength: COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        
+        offset += 2
+        
+        return details
+    }
+    
     /// Returns the details of a simple instruction at `offset`
     /// Increments `offset` to point to the next instruction.
     ///
     /// Simple instructions are a single byte and take no operands.
     /// Format:
     /// `INSTRUCTION_NAME`
-    private func simpleInstruction(name: String, offset: inout Int) -> String {
+    private func simpleInstruction(opcode: Opcode, offset: inout Int) -> String {
+        var name = String(describing: opcode).replacingOccurrences(of: "_", with: "")
         offset += 1
         return name.padding(toLength: COLUMN_WIDTH, withPad: " ", startingAt: 0)
     }
