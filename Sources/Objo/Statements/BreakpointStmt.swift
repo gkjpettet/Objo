@@ -15,7 +15,7 @@ public struct BreakpointStmt: Stmt {
         self.location = keyword
     }
     
-    public func accept(_ visitor: StmtVisitor) {
-        visitor.visitBreakpoint(stmt: self)
+    public func accept(_ visitor: StmtVisitor) throws {
+        try visitor.visitBreakpoint(stmt: self)
     }
 }

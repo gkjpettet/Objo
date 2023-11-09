@@ -22,7 +22,7 @@ public struct AssertStmt: Stmt {
     }
     
     /// A visitor is visiting this statement.
-    public func accept(_ visitor: StmtVisitor) {
-        return visitor.visitAssertStmt(stmt: self)
+    public func accept(_ visitor: StmtVisitor) throws {
+        return try visitor.visitAssertStmt(stmt: self)
     }
 }

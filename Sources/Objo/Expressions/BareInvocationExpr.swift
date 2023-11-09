@@ -23,7 +23,7 @@ public struct BareInvocationExpr: Expr {
         self.signature = try Objo.computeSignature(name: identifier.lexeme!, arity: arguments.count, isSetter: false)
     }
     
-    public func accept(_ visitor: ExprVisitor) {
-        visitor.visitBareInvocation(expr: self)
+    public func accept(_ visitor: ExprVisitor) throws {
+        try visitor.visitBareInvocation(expr: self)
     }
 }

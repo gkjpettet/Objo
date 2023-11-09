@@ -24,7 +24,7 @@ public struct TernaryExpr: Expr {
         self.location = ifKeyword
     }
     
-    public func accept(_ visitor: ExprVisitor) {
-        visitor.visitTernary(expr: self)
+    public func accept(_ visitor: ExprVisitor) throws {
+        try visitor.visitTernary(expr: self)
     }
 }

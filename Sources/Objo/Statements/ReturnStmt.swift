@@ -18,7 +18,7 @@ public struct ReturnStmt: Stmt {
         self.value = value
     }
     
-    public func accept(_ visitor: StmtVisitor) {
-        visitor.visitReturn(stmt: self)
+    public func accept(_ visitor: StmtVisitor) throws {
+        try visitor.visitReturn(stmt: self)
     }
 }

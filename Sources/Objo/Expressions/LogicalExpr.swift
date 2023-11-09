@@ -24,7 +24,7 @@ public struct LogicalExpr: Expr {
         self.right = right
     }
     
-    public func accept(_ visitor: ExprVisitor) {
-        visitor.visitLogical(expr: self)
+    public func accept(_ visitor: ExprVisitor) throws {
+       try visitor.visitLogical(expr: self)
     }
 }

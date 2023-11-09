@@ -24,7 +24,7 @@ public struct SuperMethodInvocationExpr: Expr {
         self.signature = try Objo.computeSignature(name: methodIdentifier.lexeme!, arity: arguments.count, isSetter: false)
     }
     
-    public func accept(_ visitor: ExprVisitor) {
-        visitor.visitSuperMethodInvocation(expr: self)
+    public func accept(_ visitor: ExprVisitor) throws {
+        try visitor.visitSuperMethodInvocation(expr: self)
     }
 }

@@ -20,7 +20,7 @@ public struct UnaryExpr: Expr {
         self.operand = operand
     }
     
-    public func accept(_ visitor: ExprVisitor) {
-        visitor.visitUnary(expr: self)
+    public func accept(_ visitor: ExprVisitor) throws {
+        try visitor.visitUnary(expr: self)
     }
 }

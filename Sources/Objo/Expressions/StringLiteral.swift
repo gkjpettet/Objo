@@ -18,7 +18,7 @@ public struct StringLiteral: Expr {
         self.value = token.lexeme!
     }
     
-    public func accept(_ visitor: ExprVisitor) {
-        visitor.visitString(expr: self)
+    public func accept(_ visitor: ExprVisitor) throws {
+        try visitor.visitString(expr: self)
     }
 }

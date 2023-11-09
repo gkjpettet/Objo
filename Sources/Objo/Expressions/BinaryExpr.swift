@@ -17,8 +17,8 @@ public struct BinaryExpr: Expr {
     /// The right hand expression.
     public let right: Expr
     
-    public func accept(_ visitor: ExprVisitor) {
-        visitor.visitBinary(expr: self)
+    public func accept(_ visitor: ExprVisitor) throws {
+        try visitor.visitBinary(expr: self)
     }
     
     public init(left: Expr, op: Token, right: Expr) {

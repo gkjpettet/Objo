@@ -21,7 +21,7 @@ public struct NumberLiteral: Expr {
         self.value = token.value
     }
     
-    public func accept(_ visitor: ExprVisitor) {
-        visitor.visitNumber(expr: self)
+    public func accept(_ visitor: ExprVisitor) throws {
+        try visitor.visitNumber(expr: self)
     }
 }

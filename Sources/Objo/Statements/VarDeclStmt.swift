@@ -15,8 +15,8 @@ public struct VarDeclStmt: Stmt {
     /// The `var` keyword token.
     public var location: Token
     
-    public func accept(_ visitor: StmtVisitor) {
-        return visitor.visitVarDeclaration(stmt: self)
+    public func accept(_ visitor: StmtVisitor) throws {
+        return try visitor.visitVarDeclaration(stmt: self)
     }
     
     public init(identifier: Token, initialiser: Expr, location: Token) {

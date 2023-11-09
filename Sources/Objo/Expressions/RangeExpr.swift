@@ -25,7 +25,7 @@ public struct RangeExpr: Expr {
         self.upper = upper
     }
     
-    public func accept(_ visitor: ExprVisitor) {
-        visitor.visitRange(expr: self)
+    public func accept(_ visitor: ExprVisitor) throws {
+        try visitor.visitRange(expr: self)
     }
 }

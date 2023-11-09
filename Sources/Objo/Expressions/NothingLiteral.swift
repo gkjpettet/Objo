@@ -11,8 +11,8 @@ public struct NothingLiteral: Expr {
     /// The location of the "nothing" literal or inferred "nothing" value.
     public var location: Token
     
-    public func accept(_ visitor: ExprVisitor) {
-        visitor.visitNothing(expr: self)
+    public func accept(_ visitor: ExprVisitor) throws {
+        try visitor.visitNothing(expr: self)
     }
     
     public init(token: Token) {

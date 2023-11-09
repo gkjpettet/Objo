@@ -29,7 +29,7 @@ public struct SubscriptSetterExpr: Expr {
         self.signature = try Objo.computeSubscriptSignature(arity: indexes.count + 1, isSetter: true)
     }
     
-    public func accept(_ visitor: ExprVisitor) {
-        visitor.visitSubscriptSetter(expr: self)
+    public func accept(_ visitor: ExprVisitor) throws {
+        try visitor.visitSubscriptSetter(expr: self)
     }
 }

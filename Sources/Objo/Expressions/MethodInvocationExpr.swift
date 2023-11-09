@@ -27,7 +27,7 @@ public struct MethodInvocationExpr: Expr {
         self.signature = try Objo.computeSignature(name: methodName, arity: arguments.count, isSetter: isSetter)
     }
     
-    public func accept(_ visitor: ExprVisitor) {
-        visitor.visitMethodInvocation(expr: self)
+    public func accept(_ visitor: ExprVisitor) throws {
+        try visitor.visitMethodInvocation(expr: self)
     }
 }

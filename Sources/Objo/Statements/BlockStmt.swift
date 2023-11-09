@@ -21,7 +21,7 @@ public struct BlockStmt: Stmt {
         self.closingBrace = closingBrace
     }
     
-    public func accept(_ visitor: StmtVisitor) {
-        visitor.visitBlock(stmt: self)
+    public func accept(_ visitor: StmtVisitor) throws {
+        try visitor.visitBlock(stmt: self)
     }
 }

@@ -24,7 +24,7 @@ public struct SuperSetterExpr: Expr {
         self.signature = try Objo.computeSignature(name: methodIdentifier.lexeme!, arity: 1, isSetter: true)
     }
     
-    public func accept(_ visitor: ExprVisitor) {
-        visitor.visitSuperSetter(expr: self)
+    public func accept(_ visitor: ExprVisitor) throws {
+        try visitor.visitSuperSetter(expr: self)
     }
 }

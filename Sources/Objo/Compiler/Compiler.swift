@@ -21,7 +21,7 @@ public class Compiler: ExprVisitor, StmtVisitor {
     /// Limited to one byte due to the instruction's operand size.
     private static let MAX_LOCALS = 256
     
-    // MARK: - Private properties.
+    // MARK: - Private properties
     
     /// The abstract syntax tree this compiler is compiling.
     private var ast: [Stmt] = []
@@ -90,6 +90,9 @@ public class Compiler: ExprVisitor, StmtVisitor {
     
     /// The function currently being compiled.
     public var function: Function?
+    
+    /// If `true` then the compiler will try to optimise code where possible.
+    public var optimise: Bool = true
     
     /// The outermost compiler. This is the compiler compiling the main function. It may be **this** compiler.
     public var outermostCompiler: Compiler {
@@ -195,7 +198,9 @@ public class Compiler: ExprVisitor, StmtVisitor {
         self.debugMode = debugMode
         
         // Import and tokenise the core libraries first.
-        tokens = try tokeniser.tokenise(source: coreLibrarySource, scriptId: Compiler.CORE_LIBRARY_SCRIPT_ID, includeEOF: false)
+        if coreLibrarySource != "" {
+            tokens = try tokeniser.tokenise(source: coreLibrarySource, scriptId: Compiler.CORE_LIBRARY_SCRIPT_ID, includeEOF: false)
+        }
         
         // Tokenise the user's source code. This may throw a TokeniserError, therefore aborting compilation.
         stopWatch.start()
@@ -356,6 +361,7 @@ public class Compiler: ExprVisitor, StmtVisitor {
     private func emitOpcode8(opcode: Opcode, operand: UInt8, location: Token? = nil) {
         let loc: Token = location ?? currentLocation!
         currentChunk.writeOpcode(opcode, token: loc)
+        currentChunk.writeByte(operand, token: loc)
     }
     
     /// Appends an opcode (UInt8) and a 16-bit operand to the current chunk at the current location.
@@ -431,6 +437,84 @@ public class Compiler: ExprVisitor, StmtVisitor {
         return outermostCompiler.knownGlobals[name] != nil
     }
     
+    /// Performs a binary operation on two numeric literals, `left` and `right` and tells
+    /// the VM to put the result on the stack.
+    ///
+    /// This is an optimisation for binary operators where both operands are known in
+    /// advance to be numeric literals.
+    private func optimisedBinary(op: TokenType, left: Double, right: Double) throws {
+        // First we do the appropriate calculation and then add that to the chunk's constant table,
+        // getting the index of this value in the constant table.
+        // Then we tell the VM to produce that value by supplying it with the index in the table.
+        switch op {
+        case .plus:
+            let index = currentChunk.addConstant(.number(left + right))
+            try emitVariableOpcode(shortOpcode: .constant, longOpcode: .constantLong, operand: index)
+            
+        case .minus:
+            let index = currentChunk.addConstant(.number(left - right))
+            try emitVariableOpcode(shortOpcode: .constant, longOpcode: .constantLong, operand: index)
+            
+        case .forwardSlash:
+            let index = currentChunk.addConstant(.number(left / right))
+            try emitVariableOpcode(shortOpcode: .constant, longOpcode: .constantLong, operand: index)
+            
+        case .star:
+            let index = currentChunk.addConstant(.number(left * right))
+            try emitVariableOpcode(shortOpcode: .constant, longOpcode: .constantLong, operand: index)
+            
+        case .percent:
+            let index = currentChunk.addConstant(.number(left.truncatingRemainder(dividingBy: right)))
+            try emitVariableOpcode(shortOpcode: .constant, longOpcode: .constantLong, operand: index)
+            
+        case .less:
+            emitOpcode(left < right ? .true_ : .false_)
+            
+        case .lessEqual:
+            emitOpcode(left <= right ? .true_ : .false_)
+            
+        case .greater:
+            emitOpcode(left > right ? .true_ : .false_)
+            
+        case .greaterEqual:
+            emitOpcode(left >= right ? .true_: .false_)
+            
+        case .equalEqual:
+            emitOpcode(left == right ? .true_ : .false_)
+            
+        case .notEqual:
+            emitOpcode(left != right ? .true_ : .false_)
+            
+        case .lessLess:
+            let result = Double(Int(left) << Int(right))
+            let index = currentChunk.addConstant(.number(result))
+            try emitVariableOpcode(shortOpcode: .constant, longOpcode: .constantLong, operand: index)
+            
+        case .greaterGreater:
+            let result = Double(Int(left) >> Int(right))
+            let index = currentChunk.addConstant(.number(result))
+            try emitVariableOpcode(shortOpcode: .constant, longOpcode: .constantLong, operand: index)
+            
+        case .ampersand:
+            let result = Double(UInt32(left) & UInt32(right))
+            let index = currentChunk.addConstant(.number(result))
+            try emitVariableOpcode(shortOpcode: .constant, longOpcode: .constantLong, operand: index)
+            
+        case .caret:
+            let result = Double(UInt32(left) ^ UInt32(right))
+            let index = currentChunk.addConstant(.number(result))
+            try emitVariableOpcode(shortOpcode: .constant, longOpcode: .constantLong, operand: index)
+            
+        case .pipe:
+            let result = Double(UInt32(left) | UInt32(right))
+            let index = currentChunk.addConstant(.number(result))
+            try emitVariableOpcode(shortOpcode: .constant, longOpcode: .constantLong, operand: index)
+            
+        default:
+            try error(message: "Unknown binary operator \"\(op)\".")
+        }
+    }
+    
     // MARK: - `ExprVisitor` protocol methods
     
     public func visitAssignment(expr: AssignmentExpr) throws {
@@ -448,9 +532,83 @@ public class Compiler: ExprVisitor, StmtVisitor {
         throw CompilerError(message: "Compiling bare super invocations is not yet implemented", location: expr.location)
     }
     
+    /// Compiles a binary expression.
+    ///
+    /// `a OP b` becomes:
+    /// ```
+    /// OP
+    /// b   ← top of the stack
+    /// a
+    /// ```
     public func visitBinary(expr: BinaryExpr) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling binary expressions is not yet implemented", location: expr.location)
+        currentLocation = expr.location
+        
+        if optimise {
+            // If both operands are numeric literals, we can do the arithmetic upfront
+            // and just tell the VM to produce the result.
+            if expr.left is NumberLiteral && expr.right is NumberLiteral {
+                try optimisedBinary(op: expr.op.type, left: (expr.left as! NumberLiteral).value, right: (expr.right as! NumberLiteral).value)
+                return
+            }
+        }
+        
+        // Compile the left and right operands to put them on the stack.
+        try expr.left.accept(self)  // a
+        try expr.right.accept(self) // b
+        
+        // Emit the correct opcode for the binary operator.
+        switch expr.op.type {
+        case .plus:
+            emitOpcode(.add)
+            
+        case .minus:
+            emitOpcode(.subtract)
+            
+        case .forwardSlash:
+            emitOpcode(.divide)
+            
+        case .star:
+            emitOpcode(.multiply)
+            
+        case .percent:
+            emitOpcode(.modulo)
+            
+        case .less:
+            emitOpcode(.less)
+            
+        case .lessEqual:
+            emitOpcode(.lessEqual)
+            
+        case .greater:
+            emitOpcode(.greater)
+            
+        case .greaterEqual:
+            emitOpcode(.greaterEqual)
+            
+        case .equalEqual:
+            emitOpcode(.equal)
+            
+        case .notEqual:
+            emitOpcode(.notEqual)
+            
+        case .lessLess:
+            emitOpcode(.shiftLeft)
+            
+        case .greaterGreater:
+            emitOpcode(.shiftRight)
+            
+        case .ampersand:
+            emitOpcode(.bitwiseAnd)
+            
+        case .caret:
+            emitOpcode(.bitwiseXor)
+            
+        case .pipe:
+            emitOpcode(.bitwiseOr)
+            
+        default:
+            try error(message: "Unknown binary operator \"\(expr.op.type)\"")
+        }
     }
     
     public func visitBoolean(expr: BooleanLiteral) throws {
@@ -635,9 +793,15 @@ public class Compiler: ExprVisitor, StmtVisitor {
         throw CompilerError(message: "Compiling exit statements is not yet implemented", location: stmt.location)
     }
     
+    /// Compiles an expression statement.
     public func visitExpressionStmt(stmt: ExpressionStmt) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling expression statements is not yet implemented", location: stmt.location)
+        currentLocation = stmt.location
+        
+        // Compile the expression.
+        try stmt.expression.accept(self)
+        
+        // An expression statement evaluates the expression and, importantly, **discards the result**.
+        emitOpcode(.pop)
     }
     
     public func visitFor(stmt: ForStmt) throws {

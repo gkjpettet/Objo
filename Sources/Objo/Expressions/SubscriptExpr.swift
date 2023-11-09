@@ -24,7 +24,7 @@ public struct SubscriptExpr: Expr {
         self.signature = try Objo.computeSubscriptSignature(arity: indexes.count, isSetter: false)
     }
     
-    public func accept(_ visitor: ExprVisitor) {
-        visitor.visitSubscript(expr: self)
+    public func accept(_ visitor: ExprVisitor) throws {
+        try visitor.visitSubscript(expr: self)
     }
 }

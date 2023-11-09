@@ -44,6 +44,27 @@ public struct Chunk {
         self.isDebug = isDebug
     }
     
+    /// Adds a value to the constant table.
+    /// Returns the index in the table of the newly added constant.
+    ///
+    /// Note that indexes are re-used if the passed-in constant already exists in the table.
+    mutating public func addConstant(_ value: Value) -> Int {
+        return constants.add(value)
+    }
+    
+    /// Reads an unsigned byte integer beginning at `offset` from this chunk's bytecode.
+    public func readByte(offset: Int) -> UInt8 {
+        return code[offset]
+    }
+    
+    /// Reads an unsigned 16-bit integer beginning at `offset` from this chunk's bytecode.
+    ///
+    /// Data is stored in big endian format (most significant byte first).
+    /// uint16 = (msb << 8) | lsb
+    public func readUInt16(offset: Int) -> UInt16 {
+        return (UInt16(code[offset]) << 8) | UInt16(code[offset + 1])
+    }
+    
     /// Writes a byte to this chunk.
     ///
     /// - Parameter token: The parser token that generated this byte of data.

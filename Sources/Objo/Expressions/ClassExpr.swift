@@ -17,7 +17,7 @@ public struct ClassExpr: Expr {
         self.location = identifier
     }
     
-    public func accept(_ visitor: ExprVisitor) {
-        visitor.visitClass(expr: self)
+    public func accept(_ visitor: ExprVisitor) throws {
+        try visitor.visitClass(expr: self)
     }
 }

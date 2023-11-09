@@ -17,7 +17,7 @@ public struct StaticFieldExpr: Expr {
         self.location = identifier
     }
     
-    public func accept(_ visitor: ExprVisitor) {
-        visitor.visitStaticField(expr: self)
+    public func accept(_ visitor: ExprVisitor) throws {
+        try visitor.visitStaticField(expr: self)
     }
 }

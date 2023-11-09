@@ -20,7 +20,7 @@ public struct StaticFieldAssignmentExpr: Expr {
         self.value = value
     }
     
-    public func accept(_ visitor: ExprVisitor) {
-        visitor.visitStaticFieldAssignment(expr: self)
+    public func accept(_ visitor: ExprVisitor) throws {
+        try visitor.visitStaticFieldAssignment(expr: self)
     }
 }

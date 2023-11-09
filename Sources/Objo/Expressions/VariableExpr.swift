@@ -17,7 +17,7 @@ public struct VariableExpr: Expr {
         self.location = identifier
     }
     
-    public func accept(_ visitor: ExprVisitor) {
-        visitor.visitVariable(expr: self)
+    public func accept(_ visitor: ExprVisitor) throws {
+        try visitor.visitVariable(expr: self)
     }
 }

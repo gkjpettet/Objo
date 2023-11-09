@@ -21,7 +21,7 @@ public struct BareSuperInvocationExpr: Expr {
         self.hasParentheses = hasParentheses
     }
     
-    public func accept(_ visitor: ExprVisitor) {
-        visitor.visitBareSuperInvocation(expr: self)
+    public func accept(_ visitor: ExprVisitor) throws {
+        try visitor.visitBareSuperInvocation(expr: self)
     }
 }

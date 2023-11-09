@@ -21,7 +21,7 @@ public struct WhileStmt: Stmt {
         self.location = whileKeyword
     }
     
-    public func accept(_ visitor: StmtVisitor) {
-        visitor.visitWhile(stmt: self)
+    public func accept(_ visitor: StmtVisitor) throws {
+        try visitor.visitWhile(stmt: self)
     }
 }

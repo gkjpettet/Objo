@@ -18,7 +18,7 @@ public struct BooleanLiteral: Expr {
         self.value = token.value
     }
     
-    public func accept(_ visitor: ExprVisitor) {
-        visitor.visitBoolean(expr: self)
+    public func accept(_ visitor: ExprVisitor) throws {
+        try visitor.visitBoolean(expr: self)
     }
 }

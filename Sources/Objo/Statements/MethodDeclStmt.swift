@@ -42,7 +42,7 @@ public struct MethodDeclStmt: Stmt {
         }
     }
     
-    public func accept(_ visitor: StmtVisitor) {
-        visitor.visitMethodDeclaration(stmt: self)
+    public func accept(_ visitor: StmtVisitor) throws {
+        try visitor.visitMethodDeclaration(stmt: self)
     }
 }

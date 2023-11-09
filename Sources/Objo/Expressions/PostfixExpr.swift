@@ -20,7 +20,7 @@ public struct PostfixExpr: Expr {
         self.location = op
     }
     
-    public func accept(_ visitor: ExprVisitor) {
-        visitor.visitPostfix(expr: self)
+    public func accept(_ visitor: ExprVisitor) throws {
+        try visitor.visitPostfix(expr: self)
     }
 }

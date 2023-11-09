@@ -15,7 +15,7 @@ public struct ThisExpr: Expr {
         self.location = thisKeyword
     }
     
-    public func accept(_ visitor: ExprVisitor) {
-        visitor.visitThis(expr: self)
+    public func accept(_ visitor: ExprVisitor) throws {
+        try visitor.visitThis(expr: self)
     }
 }

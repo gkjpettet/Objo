@@ -21,7 +21,7 @@ public struct CallExpr: Expr {
         self.location = lparen
     }
     
-    public func accept(_ visitor: ExprVisitor) {
-        visitor.visitCall(expr: self)
+    public func accept(_ visitor: ExprVisitor) throws {
+        try visitor.visitCall(expr: self)
     }
 }

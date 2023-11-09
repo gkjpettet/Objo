@@ -27,4 +27,8 @@ public struct ConstantTable {
         }
     }
     
+    /// Returns the value at the specified index (if it exists).
+    public subscript(index: Int) -> Value? {
+        return items[safelyIndex: index]
+    }
 }

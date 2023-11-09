@@ -24,7 +24,7 @@ public struct SwitchStmt: Stmt {
         self.location = keyword
     }
     
-    public func accept(_ visitor: StmtVisitor) {
-        visitor.visitSwitch(stmt: self)
+    public func accept(_ visitor: StmtVisitor) throws {
+        try visitor.visitSwitch(stmt: self)
     }
 }

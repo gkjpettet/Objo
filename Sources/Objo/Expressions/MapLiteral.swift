@@ -18,7 +18,7 @@ public struct MapLiteral: Expr {
         self.keyValues = keyValues
     }
     
-    public func accept(_ visitor: ExprVisitor) {
-        visitor.visitMapLiteral(expr: self)
+    public func accept(_ visitor: ExprVisitor) throws {
+        try visitor.visitMapLiteral(expr: self)
     }
 }
