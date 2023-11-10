@@ -1828,8 +1828,7 @@ public class Compiler: ExprVisitor, StmtVisitor {
     }
     
     public func visitElseCase(stmt: ElseCaseStmt) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling else cases is not yet implemented", location: stmt.location)
+        // The compiler doesn't visit this as switch statements are compiled into chained `if` statements.
     }
     
     public func visitExit(stmt: ExitStmt) throws {
