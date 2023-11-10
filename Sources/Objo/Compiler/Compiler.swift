@@ -543,6 +543,52 @@ public class Compiler: ExprVisitor, StmtVisitor {
         emitOpcode8(opcode: .call, operand: UInt8(arguments.count))
     }
     
+    /// Compiles a `++` or `--` postfix expression.
+    /// Assumes `expr` is a `++` or `--` expression.
+    private func compilePostfix(expr: PostfixExpr) throws {
+        // The `++` and `--` operators require a variable or field as their left hand operand.
+        switch expr.operand {
+        case is VariableExpr, is FieldExpr, is StaticFieldExpr:
+            // Allowed.
+            break
+        default:
+            try error(message: "The posfix `\(expr.operator_)` operator expects a variable or field as its operand.")
+        }
+        
+        // Compile the operand.
+        try expr.operand.accept(self)
+        
+        // Manipulate the operand.
+        switch expr.operator_ {
+        case .plusPlus:
+            // Increment the value on the top of the stack by 1.
+            emitOpcode(.add1)
+            
+        case .minusMinus:
+            // Decrement the value on the top of the stack by 1.
+            emitOpcode(.subtract1)
+            
+        default:
+            break
+        }
+        
+        // Do the assignment.
+        switch expr.operand {
+        case let ve as VariableExpr:
+            try assignment(name: ve.name)
+            
+        case let fe as FieldExpr:
+            try fieldAssignment(fieldName: fe.name)
+            
+        case let sfe as StaticFieldExpr:
+            try staticFieldAssignment(fieldName: sfe.name)
+            
+        default:
+            // This should never be reached because of the checks above...
+            break
+        }
+    }
+    
     /// For local variables, this is the point at which the compiler records their existence.
     ///
     /// - Parameters:
@@ -1155,6 +1201,19 @@ public class Compiler: ExprVisitor, StmtVisitor {
         currentLoop = newLoop
     }
     
+    /// Assigns the value on the top of the stack to the static field named `fieldName`.
+    private func staticFieldAssignment(fieldName: String) throws {
+        if !isCompilingMethodOrConstructor {
+            try error(message: "Static fields can only be accessed from within a method or constructor.")
+        }
+        
+        // Add the name of the field to the constants table and get its index.
+        let index = try addConstant(value: .string(fieldName))
+        
+        // Tell the VM to assign the value on the top of the stack to this field.
+        try emitVariableOpcode(shortOpcode: .setStaticField, longOpcode: .setStaticFieldLong, operand: index)
+    }
+    
     /// Compiles a call to a superclass constructor.
     ///
     /// E.g: `super` or `super(argN)`.
@@ -1670,9 +1729,17 @@ public class Compiler: ExprVisitor, StmtVisitor {
         }
     }
     
+    /// Compiles a postfix expression.
     public func visitPostfix(expr: PostfixExpr) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling postfix expressions is not yet implemented", location: expr.location)
+        currentLocation = expr.location
+        
+        switch expr.operator_ {
+        case .plusPlus, .minusMinus:
+            try compilePostfix(expr: expr)
+            
+        default:
+            try error(message: "Unknown postfix operator `\(expr.operator_)`.")
+        }
     }
     
     public func visitRange(expr: RangeExpr) throws {
