@@ -925,6 +925,16 @@ public class Compiler: ExprVisitor, StmtVisitor {
         return nil
     }
     
+    /// Tells the VM to retrieve a global variable named `name` and push it on to the stack.
+    private func getGlobalVariable(name: String) throws {
+        // Get the index of the variable in the constants table (or add it and
+        // then get its index if not already present).
+        let index = try addConstant(value: .string(name))
+        
+        // Push the variable on to the stack.
+        try emitVariableOpcode(shortOpcode: .getGlobal, longOpcode: .getGlobalLong, operand: index, location: currentLocation)
+    }
+    
     /// Returns `true` if a global variable named `name` has already been defined by this compiler chain.
     private func globalExists(name: String) -> Bool {
         return outermostCompiler.knownGlobals[name] != nil
@@ -1450,9 +1460,21 @@ public class Compiler: ExprVisitor, StmtVisitor {
         try fieldAssignment(fieldName: expr.name)
     }
     
+    /// Compiles a key-value literal.
     public func visitKeyValue(expr: KeyValueExpr) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling key-value expressions is not yet implemented", location: expr.location)
+        currentLocation = expr.location
+        
+        // Retrieve the `KeyValue` class. It should have been defined globally in the standard library.
+        try getGlobalVariable(name: "KeyValue")
+        
+        // Compile the value.
+        try expr.value.accept(self)
+        
+        // Compile the key.
+        try expr.key.accept(self)
+        
+        // Tell the VM to create a new `KeyValue` instance.
+        emitOpcode(.keyValue, location: expr.location)
     }
     
     public func visitListLiteral(expr: ListLiteral) throws {
