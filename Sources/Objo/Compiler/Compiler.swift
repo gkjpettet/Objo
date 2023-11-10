@@ -1117,9 +1117,175 @@ public class Compiler: ExprVisitor, StmtVisitor {
         // The compiler will never visit this as switch statements are compiled into chained `if` statements.
     }
     
+    /// Compiles a class declaration.
     public func visitClassDeclaration(stmt: ClassDeclStmt) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling class declarations is not yet implemented", location: stmt.location)
+        currentLocation = stmt.location
+        
+        // The class must be declared in the outermost scope (we don't allow nested classes).
+        if scopeDepth > 0 {
+            try error(message: "Nested classes are not permitted. Classes may only be declared globally.")
+        }
+        
+        // Class names must be unique (since they're in the global namespace).
+        if findClass(name: stmt.name) != nil {
+            try error(message: "Redefined class `\(stmt.name)`.")
+        }
+        
+        // We only allow classes to be declared at the top level of a script.
+        if self.type != .topLevel {
+            try error(message: "Classes can only be declared within the top level of a script.")
+        }
+        
+        // Are we boot-strapping (i.e. compiling `Object` for the first time)?
+        let bootstrapping = (stmt.name == "Object" && findClass(name: "Object") == nil ? true : false)
+        
+        // ================================
+        // SUPERCLASS
+        // ================================
+        // We don't need to do this if we're compiling `Object` for the first time.
+        var superclass: ClassData?
+        var superclassName = stmt.superclass
+        if !bootstrapping {
+            if !stmt.hasSuperclass {
+                // All classes (except for `Object`) implicitly inherit `Object`.
+                superclassName = "Object"
+            }
+            
+            // Check the superclass is valid and store a reference to it.
+            if stmt.name == superclassName {
+                try error(message: "A class cannot inherit from itself.")
+            } else {
+                superclass = findClass(name: superclassName!)
+                if superclass == nil {
+                    try error(message: "Class `\(stmt.name)` inherits class `\(superclassName!)` but there is no class with this name.")
+                }
+            }
+        }
+        
+        // ================================
+        // DECLARE THE CLASS
+        // ================================
+        // Store data about the class we're about to compile.
+        currentClass = ClassData(declaration: stmt, superclass: superclass)
+        knownClasses[stmt.name] = currentClass
+        
+        // Declare the class name as a global variable.
+        try declareVariable(identifier: stmt.identifier, initialised: false, trackAsGlobal: true)
+        
+        // Add the name of the class to the function's constants table.
+        let classNameIndex = try addConstant(value: .string(stmt.name))
+        
+        // Emit the "declare class" opcode. This will push the class on to the top of the stack.
+        emitOpcode(.class_, location: stmt.location)
+        
+        // The first operand is the index of the name of the class.
+        emitUInt16(value: UInt16(classNameIndex), location: stmt.location)
+        
+        // The second operand tells the VM if this is a foreign class (1) or not (0).
+        emitByte(byte: stmt.isForeign ? 1 : 0)
+        
+        // The third operand is the total number of fields the class contains (for the entire hierarchy).
+        // We don't know this yet so we will need to back-patch this with the actual number after we're
+        // done compiling the methods and constructors.
+        // For now, we'll emit the maximum number of permitted fields.
+        emitByte(byte: 255)
+        var numFieldsOffset = currentChunk.code.count - 1
+        
+        // The fourth operand is the index in `Klass.fields` of the first of *this* class's fields.
+        // Earlier indexes are the fields of superclasses.
+        // Strictly speaking, this is only needed for debug stepping in the VM but we'll emit it
+        // even for production code to simplify the VM's implementation.
+        // Classes are declared infrequently so I don't think this will have a meaningful performance penalty.
+        emitByte(byte: UInt8(currentClass!.fieldStartIndex))
+        
+        // Define the class as a global variable.
+        try defineVariable(index: classNameIndex)
+        
+        // Push the class on to the stack so the methods can find it.
+        try emitVariableOpcode(shortOpcode: .getGlobal, longOpcode: .getGlobalLong, operand: classNameIndex, location: stmt.location)
+        
+        // ================================
+        // INHERITANCE
+        // ================================
+        if !bootstrapping {
+            // Look up the superclass by name and push it on to the top of the stack. Classes are always globally defined.
+            try emitVariableOpcode(shortOpcode: .getGlobal, longOpcode: .getGlobalLong, operand: addConstant(value: .string(superclassName!)), location: stmt.location)
+            
+            // Tell the VM that this class inherits from the class on the top of the stack.
+            // The VM will pop the superclass off the stack when its done handling the inheritance.
+            emitOpcode(.inherit, location: stmt.location)
+        }
+        
+        // Foreign instance methods.
+        for (_, fm) in stmt.foreignInstanceMethods {
+            try fm.accept(self)
+        }
+        
+        // Foreign static methods.
+        for (_, fm) in stmt.foreignStaticMethods {
+            try fm.accept(self)
+        }
+        
+        // Constructors.
+        for constructor in stmt.constructors {
+            try constructor.accept(self)
+        }
+        
+        // Static methods.
+        for (_, m) in stmt.staticMethods {
+            try m.accept(self)
+        }
+        
+        // Instance methods.
+        for (_, m) in stmt.methods {
+            try m.accept(self)
+        }
+        
+        // Field count.
+        if currentClass!.totalFieldCount > 255 {
+            try error(message: "Class `\(stmt.name)` has exceeded the maximum number of fields (255). This includes inherited ones.")
+        }
+        
+        // Disallow foreign classes from inheriting from classes with fields.
+        // I'm doing this because Wren does and Bob Nystrom must have a good reason for this :)
+        if stmt.isForeign && currentClass!.totalFieldCount > currentClass!.fieldCount {
+            try error(message: "Foreign class `\(currentClass!.name)` cannot inherit from a class with fields.")
+        }
+        
+        // Back-patch fields by replacing our placeholder with the actual number of fields for this class.
+        currentChunk.code[numFieldsOffset] = UInt8(currentClass!.totalFieldCount)
+        
+        // ================================
+        // DEBUGGING DATA
+        // ================================
+        if self.debugMode {
+            // Tell the VM the name and index of all of this class's fields so we can see them in the debugger.
+            // The first operand is the index of the field's name in the constant pool.
+            // The second operand is the index of the field in `Klass.fields`.
+            for (i, fieldName) in currentClass!.fields.enumerated() {
+                let fieldNameIndex = try addConstant(value: .string(fieldName))
+                emitOpcode(.debugFieldName)
+                emitUInt16(value: UInt16(fieldNameIndex))
+                emitByte(byte: UInt8(currentClass!.fieldStartIndex + i))
+            }
+        }
+        
+        // ================================
+        // NOTHING EDGE CASE
+        // ================================
+        // We're compiling the built-in type `Nothing`.
+        // Since the VM keeps just one instance of `Nothing`, we need to tell it to create it now that
+        // the class has been defined.
+        // There's a special instruction for that.
+        if stmt.name == "Nothing" {
+            emitOpcode(.defineNothing)
+        }
+        
+        // Tidy up by popping the class off the stack.
+        emitOpcode(.pop)
+        
+        // We're no longer compiling a class.
+        currentClass = nil
     }
     
     public func visitConstructorDeclaration(stmt: ConstructorDeclStmt) throws {

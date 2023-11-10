@@ -29,7 +29,7 @@ public struct ClassDeclStmt: Stmt {
     /// This class's static method declarations. Key = signature, value = MethodDeclStmt.
     public let staticMethods: [String : MethodDeclStmt]
     /// The superclass (if any).
-    public let superclass: String?
+    public var superclass: String?
     
     public init(superclass: String?, identifier: Token, constructors: [ConstructorDeclStmt], staticMethods: [String : MethodDeclStmt], methods: [String : MethodDeclStmt], foreignInstanceMethods: [String : ForeignMethodDeclStmt], foreignStaticMethods: [String : ForeignMethodDeclStmt], classKeyword: Token, isForeign: Bool) {
         
