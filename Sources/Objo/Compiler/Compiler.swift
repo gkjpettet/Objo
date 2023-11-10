@@ -1590,9 +1590,18 @@ public class Compiler: ExprVisitor, StmtVisitor {
         emitByte(byte: UInt8(expr.arguments.count), location: expr.location)
     }
     
+    /// Compiles an `is` expression.
     public func visitIs(expr: IsExpr) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling `is` expressions is not yet implemented", location: expr.location)
+        currentLocation = expr.location
+        
+        // Compile the value operand - this will leave it on the stack.
+        try expr.value.accept(self)
+        
+        // Compile the type to put it on the stack.
+        try expr.type.accept(self)
+        
+        // Emit the instruction.
+        emitOpcode(.is_, location: expr.location)
     }
     
     public func visitMapLiteral(expr: MapLiteral) throws {
