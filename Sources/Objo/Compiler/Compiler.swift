@@ -1477,9 +1477,25 @@ public class Compiler: ExprVisitor, StmtVisitor {
         emitOpcode(.keyValue, location: expr.location)
     }
     
+    /// Compiles a list literal.
     public func visitListLiteral(expr: ListLiteral) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling list literals is not yet implemented", location: expr.location)
+        currentLocation = expr.location
+        
+        // Retrieve the List class. It should have been defined globally in the standard library.
+        try getGlobalVariable(name: "List")
+        
+        // Make sure no more than 255 initial elements are defined.
+        if expr.elements.count > 255 {
+            try error(message: "The maximum number of initial elements for a list is 255.")
+        }
+        
+        // Any initial elements need compiling to leave them on the top of the stack.
+        for element in expr.elements {
+            try element.accept(self)
+        }
+        
+        // Tell the VM to create a `List` instance with the optional initial elements.
+        emitOpcode8(opcode: .list, operand: UInt8(expr.elements.count), location: expr.location)
     }
     
     public func visitLogical(expr: LogicalExpr) throws {
