@@ -1604,9 +1604,38 @@ public class Compiler: ExprVisitor, StmtVisitor {
         emitOpcode(.is_, location: expr.location)
     }
     
+    /// Compiles a `Map` literal.
     public func visitMapLiteral(expr: MapLiteral) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling map literals is not yet implemented", location: expr.location)
+        currentLocation = expr.location
+        
+        // Retrieve the `Map` class. It should have been defined globally in the standard library.
+        try getGlobalVariable(name: "Map")
+        
+        if expr.keyValues.count > 255 {
+            try error(message: "The maximum number of initial key-value pairs for a map is 255.")
+        }
+        
+        // Compile the key-value pairs.
+        // We compile in reverse order compared to how they were parsed which means the first key-value
+        // popped off the stack by the VM will be the first one in the literal.
+        // E.g: `{a : b, c : d}` compiles to:
+        // ```
+        // a         <-- stack top
+        // b
+        // c
+        // d
+        // Map class
+        // ```
+        for kv in expr.keyValues.reversed() {
+            // Compile the value.
+            try kv.value.accept(self)
+            
+            // Compile the key.
+            try kv.key.accept(self)
+        }
+        
+        // Tell the VM to create a `Map` instance with the optional initial key-values.
+        emitOpcode8(opcode: .map, operand: UInt8(expr.keyValues.count))
     }
     
     /// Tell the VM to push the singleton `nothing` instance to the stack.
