@@ -19,7 +19,10 @@ public class Compiler: ExprVisitor, StmtVisitor {
     
     /// The maximum number of local variables that can be in scope at one time.
     /// Limited to one byte due to the instruction's operand size.
-    private static let MAX_LOCALS = 256
+    private let MAX_LOCALS = 256
+    
+    /// The maximum jump distance in bytes (UInt16 max).
+    private let MAX_JUMP = 65535
     
     // MARK: - Private properties
     
@@ -301,7 +304,7 @@ public class Compiler: ExprVisitor, StmtVisitor {
     
     /// Tracks a local variable in the current scope.
     private func addLocal(identifier: Token, initialised: Bool = false) throws {
-        if locals.count >= Compiler.MAX_LOCALS {
+        if locals.count >= MAX_LOCALS {
             try error(message: "Too many local variables in scope.")
         }
         
@@ -456,6 +459,29 @@ public class Compiler: ExprVisitor, StmtVisitor {
         }
     }
     
+    /// Generates code for the VM to discard local variables at `depth` or greater. Does *not*
+    /// actually undeclare variables or pop any scopes. Returns the number of local variables that were eliminated.
+    ///
+    /// This is called directly when compiling `continue` and `exit` statements to ditch the local variables
+    /// before jumping out of the loop even though they are still in scope *past* the exit instruction.
+    @discardableResult private func discardLocals(depth: Int) throws -> Int {
+        if scopeDepth < 0 {
+            try error(message: "Cannot exit top-level scope.")
+        }
+        
+        // How many locals do we need to pop?
+        var local = locals.count - 1
+        var discardCount = 0
+        while local >= 0 && locals[local].depth >= depth {
+            discardCount += 1
+            local -= 1
+        }
+        
+        emitOpcode8(opcode: .popN, operand: UInt8(discardCount))
+        
+        return discardCount
+    }
+    
     /// Appends a single byte to the current chunk at the current location.
     /// An optional `location` can be provided.
     private func emitByte(byte: UInt8, location: Token? = nil) {
@@ -499,6 +525,23 @@ public class Compiler: ExprVisitor, StmtVisitor {
         
         // Return the index in the chunk's constant table.
         return index
+    }
+    
+    /// Emits a new loop instruction which unconditionally jumps backwards to `loopStart`.
+    /// If `location` is `nil` we use the current location.
+    private func emitLoop(loopStart: Int, location: Token? = nil) throws {
+        emitOpcode(.loop)
+        
+        // Compute the offset to subtract from the VM's instruction pointer.
+        // +2 accounts for the `loop` instruction's own operands which we also need to jump over.
+        let offset = currentChunk.length - loopStart + 2
+        
+        if offset > MAX_JUMP {
+            try error(message: "Maximal loop body size exceeded.")
+        }
+        
+        // Emit the 16-bit offset.
+        emitUInt16(value: UInt16(offset), location: location ?? currentLocation!)
     }
     
     /// Appends an opcode (UInt8) to the current chunk at the current location.
@@ -1313,9 +1356,19 @@ public class Compiler: ExprVisitor, StmtVisitor {
         emitOpcode8(opcode: .constructor, operand: UInt8(stmt.parameters.count), location: stmt.location)
     }
     
+    /// Compiles a `continue` statement.
     public func visitContinue(stmt: ContinueStmt) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling continue statements is not yet implemented", location: stmt.location)
+        currentLocation = stmt.location
+        
+        if currentLoop == nil {
+            try error(message: "Cannot use `continue` outside of a loop.")
+        }
+        
+        // Since we'll be jumping out of the scope, make sure any locals in it are discarded first.
+        try discardLocals(depth: currentLoop!.scopeDepth + 1)
+        
+        // Emit a jump back to the top of the current loop.
+        try emitLoop(loopStart: currentLoop!.start)
     }
     
     public func visitDo(stmt: DoStmt) throws {
