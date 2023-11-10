@@ -581,6 +581,23 @@ public class Compiler: ExprVisitor, StmtVisitor {
         }
     }
     
+    /// Ends the current scope.
+    private func endScope() {
+        scopeDepth -= 1
+        
+        // Remove any locals declared in this scope by popping them off the top of the stack.
+        var popCount = 0
+        while locals.count > 0 && locals.last!.depth > scopeDepth {
+            popCount += 1
+            locals.removeLast()
+        }
+        
+        // It's more efficient to pop multiple values off the stack at once, therefore we use `popN`.
+        if popCount > 0 {
+            emitOpcode8(opcode: .popN, operand: UInt8(popCount))
+        }
+    }
+    
     /// Throws a `CompilerError` at the current location.
     /// If the error is not at the current location, `location` may be passed instead.
     private func error(message: String, location: Token? = nil) throws {
@@ -1055,9 +1072,15 @@ public class Compiler: ExprVisitor, StmtVisitor {
         emitOpcode(.assert, location: stmt.location)
     }
     
+    /// Compiles a block of statements.
     public func visitBlock(stmt: BlockStmt) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling blocks is not yet implemented", location: stmt.location)
+        beginScope()
+        
+        for s in stmt.statements {
+            try s.accept(self)
+        }
+        
+        endScope()
     }
     
     public func visitBreakpoint(stmt: BreakpointStmt) throws {
