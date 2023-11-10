@@ -1800,9 +1800,32 @@ public class Compiler: ExprVisitor, StmtVisitor {
         try emitVariableOpcode(shortOpcode: .constant, longOpcode: .constantLong, operand: index)
     }
     
+    /// Compiles a subscript method call.
+    ///
+    /// E.g: `operand[1]`
     public func visitSubscript(expr: SubscriptExpr) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling subscript expressions is not yet implemented", location: expr.location)
+        currentLocation = expr.location
+        
+        // Compile the operand to put it on the stack.
+        try expr.operand.accept(self)
+        
+        // Load the signature into the constants table.
+        let sigIndex = try addConstant(value: .string(expr.signature))
+        
+        if expr.indexes.count > 255 {
+            try error(message: "The maximum number of subscript indexes is 255.")
+        }
+        
+        // Compile the indexes.
+        for i in expr.indexes {
+            try i.accept(self)
+        }
+        
+        // Emit the `invoke` instruction and the index of the method's signature in the constants table.
+        try emitVariableOpcode(shortOpcode: .invoke, longOpcode: .invokeLong, operand: sigIndex, location: expr.location)
+        
+        // Emit the index count.
+        emitByte(byte: UInt8(expr.indexes.count), location: expr.location)
     }
     
     public func visitSubscriptSetter(expr: SubscriptSetterExpr) throws {
