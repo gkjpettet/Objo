@@ -1742,9 +1742,26 @@ public class Compiler: ExprVisitor, StmtVisitor {
         }
     }
     
+    /// Compiles an inclusive (...) or exclusive (..<) range expression.
+    ///
+    /// `a RANGE_OP b` becomes:
+    /// ```
+    ///  RANGE_OP
+    ///  b   ← top of the stack
+    ///  a
+    ///  ```
     public func visitRange(expr: RangeExpr) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling range expressions is not yet implemented", location: expr.location)
+        currentLocation = expr.location
+        
+        // Compile the left and right operands - this will leave them on the stack.
+        try expr.lower.accept(self)
+        try expr.upper.accept(self)
+        
+        if expr.isInclusive {
+            emitOpcode(.rangeInclusive)
+        } else {
+            emitOpcode(.rangeExclusive)
+        }
     }
     
     public func visitStaticField(expr: StaticFieldExpr) throws {
