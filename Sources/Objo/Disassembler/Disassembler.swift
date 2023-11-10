@@ -41,7 +41,7 @@ public struct Disassembler {
         case .constant, .constantLong, .defineGlobal, .defineGlobalLong, .getGlobal, .getGlobalLong, .getStaticField, .getStaticFieldLong, .setGlobal, .setGlobalLong, .setStaticField, .setStaticFieldLong:
             return try constantInstruction(opcode: opcode, chunk: chunk, offset: &offset)
             
-        case .add, .add1, .assert, .bitwiseAnd, .bitwiseOr, .bitwiseXor, .breakpoint, .defineNothing, .divide, .equal, .exit, .false_, .greater, .greaterEqual, .inherit, .is_, .keyValue, .less, .lessEqual, .load0, .load1, .load2, .loadMinus1, .loadMinus2, .logicalXor, .multiply, .modulo, .negate, .not, .notEqual, .nothing, .pop, .return_, .rangeExclusive, .rangeInclusive, .shiftLeft, .shiftRight, .subtract, .subtract1, .swap, .true_:
+        case .add, .add1, .assert, .bitwiseAnd, .bitwiseNot, .bitwiseOr, .bitwiseXor, .breakpoint, .defineNothing, .divide, .equal, .exit, .false_, .greater, .greaterEqual, .inherit, .is_, .keyValue, .less, .lessEqual, .load0, .load1, .load2, .loadMinus1, .loadMinus2, .logicalXor, .multiply, .modulo, .negate, .not, .notEqual, .nothing, .pop, .return_, .rangeExclusive, .rangeInclusive, .shiftLeft, .shiftRight, .subtract, .subtract1, .swap, .true_:
             return simpleInstruction(opcode: opcode, offset: &offset)
             
         case .call, .constructor, .getLocalClass, .list, .map, .popN, .getLocal, .setLocal:

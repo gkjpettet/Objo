@@ -275,6 +275,19 @@ public class Compiler: ExprVisitor, StmtVisitor {
     
     // MARK: - Private methods
     
+    /// Adds the `value` to the current function's constant pool and returns its index in the pool.
+    ///
+    /// - Throws `CompilerError` if the maximum number of constants has been reached.
+    private func addConstant(value: Value) throws -> Int {
+        let index = currentChunk.addConstant(value)
+        
+        if index > Chunk.MAX_CONSTANTS {
+            try error(message: "Too many constants in the chunk.")
+        }
+        
+        return index
+    }
+    
     /// Tracks the existence of a global variable named `name`.
     private func addGlobal(name: String) {
         // Only the outermost compiler stores the names of defined globals.
@@ -349,6 +362,45 @@ public class Compiler: ExprVisitor, StmtVisitor {
         }
     }
     
+    /// Adds the `value` to the current chunk's constant pool at the current location and pushes it to the stack.
+    ///
+    /// Returns the index in the constant table or `-1` if the value has a dedicated opcode accessor.
+    @discardableResult private func emitConstant(value: Value, location: Token? = nil) throws -> Int {
+        let loc = location ?? currentLocation
+        
+        // The VM has dedicated instructions for producing certain numeric constants that are commonly used.
+        switch value {
+        case .number(let d):
+            switch d {
+            case 0.0:
+                emitOpcode(.load0, location: loc)
+                return -1
+                
+            case 1.0:
+                emitOpcode(.load1, location: loc)
+                return -1
+                
+            case 2.0:
+                emitOpcode(.load2, location: loc)
+                return -1
+                
+            default:
+                break
+            }
+        default:
+            break
+        }
+        
+        // Add this constant to the chunk's constant table.
+        let index = try addConstant(value: value)
+        
+        // Tell the VM to produce the constant.
+        try emitVariableOpcode(shortOpcode: .constant, longOpcode: .constantLong, operand: index)
+        
+        // Return the index in the chunk's constant table.
+        return index
+    }
+    
     /// Appends an opcode (UInt8) to the current chunk at the current location.
     /// An optional `location` can be provided otherwise the compiler defaults to its current location.
     private func emitOpcode(_ opcode: Opcode, location: Token? = nil) {
@@ -392,9 +444,12 @@ public class Compiler: ExprVisitor, StmtVisitor {
         currentChunk.writeUInt16(value, token: location ?? currentLocation!)
     }
     
-    /// Emits an opcode followed by `operand`. `
-    /// The operand may by one or two bytes in length. If `operand` is one byte then `shortOpcode` is emitted before the operand, otherwise `longOpcode` is emitted.
+    /// Emits an opcode followed by `operand`.
+    ///
+    /// The operand may be one or two bytes in length. If `operand` is one byte then `shortOpcode` is emitted before the operand, otherwise `longOpcode` is emitted.
+    ///
     /// If `index <= 255` then `shortOpcode` is emitted followed by the single byte `index`.
+    ///
     /// Otherwise `longOpcode` is emitted followed by the two byte `index`.
     private func emitVariableOpcode(shortOpcode: Opcode, longOpcode: Opcode, operand: Int, location: Token? = nil) throws {
         if operand < 0 || operand > Chunk.MAX_CONSTANTS {
@@ -719,9 +774,15 @@ public class Compiler: ExprVisitor, StmtVisitor {
         throw CompilerError(message: "Compiling static field assignment is not yet implemented", location: expr.location)
     }
     
+    /// The VM should produce a string literal.
     public func visitString(expr: StringLiteral) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling string literals is not yet implemented", location: expr.location)
+        currentLocation = expr.location
+        
+        // Store the string in the chunk's constant table.
+        let index = currentChunk.addConstant(.string(expr.value))
+        
+        // Tell the VM to produce the constant at runtime.
+        try emitVariableOpcode(shortOpcode: .constant, longOpcode: .constantLong, operand: index)
     }
     
     public func visitSubscript(expr: SubscriptExpr) throws {
@@ -754,9 +815,48 @@ public class Compiler: ExprVisitor, StmtVisitor {
         throw CompilerError(message: "Compiling this expressions is not yet implemented", location: expr.location)
     }
     
+    /// Compiles a unary expression.
     public func visitUnary(expr: UnaryExpr) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling unary expressions is not yet implemented", location: expr.location)
+        currentLocation = expr.location
+        
+        // Emit the correct operator instructor.
+        switch expr.operator_ {
+        case .minus:
+            // We can compile negation of numeric literals more efficiently
+            // by letting the compiler negate the value and then emitting it as a constant.
+            if expr.operand is NumberLiteral {
+                switch (expr.operand as! NumberLiteral).value {
+                case 1.0:
+                    // -1 has a dedicated opcode.
+                    emitOpcode(.loadMinus1, location: expr.operand.location)
+                case 2.0:
+                    // -2 has a dedicated opcode.
+                    emitOpcode(.loadMinus2, location: expr.operand.location)
+                default:
+                    // Negate the value and emit it as a constant.
+                    try emitConstant(value: .number(-(expr.operand as! NumberLiteral).value), location: expr.operand.location)
+                }
+            } else {
+                // Compile the operand.
+                try expr.operand.accept(self)
+                
+                // Emit the negate instruction.
+                emitOpcode(.negate)
+            }
+            
+        case .not:
+            // Compile the operand.
+            try expr.operand.accept(self)
+            emitOpcode(.not)
+            
+        case .tilde:
+            // Compile the operand.
+            try expr.operand.accept(self)
+            emitOpcode(.bitwiseNot)
+            
+        default:
+            try error(message: "Unknown unary operator `\(expr.operator_)`.")
+        }
     }
     
     public func visitVariable(expr: VariableExpr) throws {
@@ -766,9 +866,17 @@ public class Compiler: ExprVisitor, StmtVisitor {
     
     // MARK: - `StmtVisitor` protocol methods
     
+    /// Compiles an `assert` statement.
     public func visitAssertStmt(stmt: AssertStmt) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling assert statements is not yet implemented", location: stmt.location)
+        currentLocation = stmt.location
+        
+        // Compile the condition.
+        try stmt.condition.accept(self)
+        
+        // Compile the message.
+        try stmt.message.accept(self)
+        
+        emitOpcode(.assert, location: stmt.location)
     }
     
     public func visitBlock(stmt: BlockStmt) throws {

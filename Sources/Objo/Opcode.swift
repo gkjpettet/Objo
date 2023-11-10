@@ -12,6 +12,7 @@ public enum Opcode: UInt8 {
     case add1
     case assert
     case bitwiseAnd
+    case bitwiseNot
     case bitwiseOr
     case bitwiseXor
     case breakpoint
