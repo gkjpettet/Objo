@@ -865,6 +865,26 @@ public class Compiler: ExprVisitor, StmtVisitor {
         emitOpcode(.pop)
     }
     
+    /// Assigns the value on the top of the stack to the specified field.
+    private func fieldAssignment(fieldName: String) throws {
+        if !isCompilingMethodOrConstructor {
+            try error(message: "Fields can only be accessed from within a method or constructor.")
+        }
+        
+        if self.isStaticMethod {
+            try error(message: "Instance fields can only be accessed from within an instance method, not a static method.")
+        }
+        
+        // Get the index of the field to access at runtime.
+        let fieldIndex = try fieldIndex(fieldName: fieldName)
+        
+        if fieldIndex > 255 {
+            try error(message: "Classes cannot have more than 255 fields, including inherited ones.")
+        }
+        
+        emitOpcode8(opcode: .setField, operand: UInt8(fieldIndex))
+    }
+    
     /// Returns the field index of `fieldName` for *this* class (not any superclasses).
     /// This is the index the runtime will access.
     /// If there is no field with this name then a new one is created.
@@ -1421,9 +1441,13 @@ public class Compiler: ExprVisitor, StmtVisitor {
         emitOpcode8(opcode: .getField, operand: UInt8(index))
     }
     
+    /// Compiles a field assignment.
     public func visitFieldAssignment(expr: FieldAssignmentExpr) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling field assignment is not yet implemented", location: expr.location)
+        // Compile the value to assign, leaving it on the top of the stack.
+        try expr.value.accept(self)
+        
+        // Assign the value on the top of the stack to this field.
+        try fieldAssignment(fieldName: expr.name)
     }
     
     public func visitKeyValue(expr: KeyValueExpr) throws {
