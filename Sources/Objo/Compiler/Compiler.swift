@@ -865,9 +865,24 @@ public class Compiler: ExprVisitor, StmtVisitor {
         emitOpcode(expr.value ? .true_ : .false_)
     }
     	
+    /// Compiles a call expression. E.g: `identifier()`.
     public func visitCall(expr: CallExpr) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling call expressions is not yet implemented", location: expr.location)
+        currentLocation = expr.location
+        
+        if expr.arguments.count > 255 {
+            try error(message: "A call cannot have more than 255 arguments.")
+        }
+        
+        // Compile the callee.
+        try expr.callee.accept(self)
+        
+        // Compile the arguments.
+        for arg in expr.arguments {
+            try arg.accept(self)
+        }
+        
+        // Emit the `call` instruction with the number of arguments as its operand.
+        emitOpcode8(opcode: .call, operand: UInt8(expr.arguments.count))
     }
     
     public func visitClass(expr: ClassExpr) throws {
