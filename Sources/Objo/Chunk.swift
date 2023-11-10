@@ -52,6 +52,14 @@ public struct Chunk {
         return constants.add(value)
     }
     
+    /// Returns the line number for the bytecode at `offset`.
+    ///
+    /// This is abstracted out to its own method in case I ever implement any
+    /// compression for how the line numbers are stored.
+    public func lineForOffset(_ offset: Int) -> Int {
+        return lines[offset]
+    }
+    
     /// Reads an unsigned byte integer beginning at `offset` from this chunk's bytecode.
     public func readByte(offset: Int) -> UInt8 {
         return code[offset]
@@ -63,6 +71,14 @@ public struct Chunk {
     /// uint16 = (msb << 8) | lsb
     public func readUInt16(offset: Int) -> UInt16 {
         return (UInt16(code[offset]) << 8) | UInt16(code[offset + 1])
+    }
+    
+    /// Returns the script ID for the bytecode at `offset`.
+    ///
+    /// This is abstracted out to its own method in case I ever implement any
+    /// compression for how the script IDs are stored.
+    public func scriptIDForOffset(_ offset: Int) -> Int {
+        return scriptID[offset]
     }
     
     /// Writes a byte to this chunk.

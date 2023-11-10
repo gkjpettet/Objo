@@ -1189,7 +1189,7 @@ public class Compiler: ExprVisitor, StmtVisitor {
         // done compiling the methods and constructors.
         // For now, we'll emit the maximum number of permitted fields.
         emitByte(byte: 255)
-        var numFieldsOffset = currentChunk.code.count - 1
+        let numFieldsOffset = currentChunk.code.count - 1
         
         // The fourth operand is the index in `Klass.fields` of the first of *this* class's fields.
         // Earlier indexes are the fields of superclasses.
@@ -1288,9 +1288,29 @@ public class Compiler: ExprVisitor, StmtVisitor {
         currentClass = nil
     }
     
+    /// Compiles a class constructor.
+    ///
+    /// To define a new constructor, the VM needs three things:
+    ///  1. The constructor's argument count.
+    ///  2. The function that is the constructor's body.
+    ///  3. The class to bind the constructor to.
     public func visitConstructorDeclaration(stmt: ConstructorDeclStmt) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling constructors is not yet implemented", location: stmt.location)
+        currentLocation = stmt.location
+        
+        if stmt.parameters.count > 255 {
+            try error(message: "The maximum number of parameters for a constructor is 255.")
+        }
+        
+        // Compile the body. We need a new compiler for this.
+        let compiler = Compiler(coreLibrarySource: "")
+        let body = try compiler.compile(name: "constructor", parameters: stmt.parameters, body: stmt.body, type: .constructor, currentClass: currentClass, isStaticMethod: false, debugMode: self.debugMode, shouldReset: true, enclosingCompiler: self)
+        
+        // Store the compiled constructor body as a constant in this function's constant table
+        // and push it on to the stack.
+        try emitConstant(value: .function(body))
+        
+        // Emit the "declare constructor" opcode. The operand is the argument count.
+        emitOpcode8(opcode: .constructor, operand: UInt8(stmt.parameters.count), location: stmt.location)
     }
     
     public func visitContinue(stmt: ContinueStmt) throws {

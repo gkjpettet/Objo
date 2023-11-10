@@ -10,7 +10,7 @@
 
 import Foundation
 
-public struct ConstantTable {
+public struct ConstantTable: Hashable {
     
     private var items: [Value] = []
     
@@ -25,6 +25,11 @@ public struct ConstantTable {
             items.append(value)
             return items.count - 1
         }
+    }
+    
+    /// The number of constants in the table.
+    public func count() -> Int {
+        return items.count
     }
     
     /// Returns the value at the specified index (if it exists).
