@@ -614,10 +614,9 @@ public class Compiler: ExprVisitor, StmtVisitor {
     /// The VM should produce a boolean constant.
     public func visitBoolean(expr: BooleanLiteral) throws {
         currentLocation = expr.location
-        
         emitOpcode(expr.value ? .true_ : .false_)
     }
-    
+    	
     public func visitCall(expr: CallExpr) throws {
         // TODO: Implement.
         throw CompilerError(message: "Compiling call expressions is not yet implemented", location: expr.location)
@@ -668,9 +667,10 @@ public class Compiler: ExprVisitor, StmtVisitor {
         throw CompilerError(message: "Compiling map literals is not yet implemented", location: expr.location)
     }
     
+    /// Tell the VM to push the singleton `nothing` instance to the stack.
     public func visitNothing(expr: NothingLiteral) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling `nothing` literals` is not yet implemented", location: expr.location)
+        currentLocation = expr.location
+        emitOpcode(.nothing)
     }
     
     public func visitNumber(expr: NumberLiteral) throws {
