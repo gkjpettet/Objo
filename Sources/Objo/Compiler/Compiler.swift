@@ -885,9 +885,16 @@ public class Compiler: ExprVisitor, StmtVisitor {
         emitOpcode8(opcode: .call, operand: UInt8(expr.arguments.count))
     }
     
+    /// Compiles retrieving a global class.
+    ///
+    /// In Objo, classes are always defined globally.
     public func visitClass(expr: ClassExpr) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling class expressions is not yet implemented", location: expr.location)
+        // Add the name of the class to the constant pool and get its index.
+        let nameIndex = try addConstant(value: .string(expr.name))
+        
+        // Tell the VM to retrieve the requested global variable (which we're assuming is a class)
+        // and push it on to the stack.
+        try emitVariableOpcode(shortOpcode: .getGlobal, longOpcode: .getGlobalLong, operand: nameIndex)
     }
     
     public func visitField(expr: FieldExpr) throws {
@@ -1107,8 +1114,7 @@ public class Compiler: ExprVisitor, StmtVisitor {
     }
     
     public func visitCase(stmt: CaseStmt) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling case statements is not yet implemented", location: stmt.location)
+        // The compiler will never visit this as switch statements are compiled into chained `if` statements.
     }
     
     public func visitClassDeclaration(stmt: ClassDeclStmt) throws {
