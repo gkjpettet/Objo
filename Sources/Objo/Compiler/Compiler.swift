@@ -1562,9 +1562,32 @@ public class Compiler: ExprVisitor, StmtVisitor {
         }
     }
     
+    /// Compiles a method invocation.
+    ///
+    /// E.g: `operand.method(arg1, arg2)`
     public func visitMethodInvocation(expr: MethodInvocationExpr) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling method invocations is not yet implemented", location: expr.location)
+        currentLocation = expr.location
+        
+        // Compile the operand to put it on the stack.
+        try expr.operand.accept(self)
+        
+        // Load the method's signature into the constant pool.
+        let index = try addConstant(value: .string(expr.signature))
+        
+        if expr.arguments.count > 255 {
+            try error(message: "The maximum number of arguments is 255.")
+        }
+        
+        // Compile the arguments.
+        for arg in expr.arguments {
+            try arg.accept(self)
+        }
+        
+        // Emit the `invoke` instruction and the index of the method's signature in the constant pool.
+        try emitVariableOpcode(shortOpcode: .invoke, longOpcode: .invokeLong, operand: index, location: expr.location)
+        
+        // Emit the argument count.
+        emitByte(byte: UInt8(expr.arguments.count), location: expr.location)
     }
     
     public func visitIs(expr: IsExpr) throws {
