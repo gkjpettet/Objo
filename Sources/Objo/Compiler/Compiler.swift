@@ -611,9 +611,11 @@ public class Compiler: ExprVisitor, StmtVisitor {
         }
     }
     
+    /// The VM should produce a boolean constant.
     public func visitBoolean(expr: BooleanLiteral) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling boolean literals is not yet implemented", location: expr.location)
+        currentLocation = expr.location
+        
+        emitOpcode(expr.value ? .true_ : .false_)
     }
     
     public func visitCall(expr: CallExpr) throws {

@@ -57,7 +57,7 @@ public struct Disassembler {
             return fieldInstruction(opcode: opcode, chunk: chunk, offset: &offset)
             
         case .invoke, .invokeLong:
-            return invokeInstruction(opcode: opcode, chunk: chunk, offset: &offset)
+            return try invokeInstruction(opcode: opcode, chunk: chunk, offset: &offset)
             
         case .jump, .jumpIfFalse, .jumpIfTrue:
             return jumpInstruction(opcode: opcode, negative: false, chunk: chunk, offset: &offset)
@@ -69,7 +69,7 @@ public struct Disassembler {
             return jumpInstruction(opcode: opcode, negative: true, chunk: chunk, offset: &offset)
             
         case .method, .foreignMethod:
-            return methodInstruction(opcode: opcode, chunk: chunk, offset: &offset)
+            return try methodInstruction(opcode: opcode, chunk: chunk, offset: &offset)
             
         case .superConstructor:
             return superConstructor(chunk: chunk, offset: &offset)
@@ -86,6 +86,50 @@ public struct Disassembler {
     }
     
     // MARK: - Private methods
+    
+    /// Returns the details of a class instruction at `offset` and increments `offset` to point to the next instruction.
+    ///
+    /// We return the instruction's name, the index of the class's name in the constant pool, the class name, whether
+    /// it's a foreign class, the total number of fields used by the class and the index of the first field in
+    /// `Klass.Fields`.
+    /// Format:
+    /// `INSTRUCTION_NAME  POOL_INDEX  CLASS_NAME  FIELD_COUNT  FIRST_FIELD_INDEX`
+    private func classInstruction(chunk: Chunk, offset: inout Int) -> String {
+        // Get index of the constant.
+        let constantIndex = Int(chunk.readUInt16(offset: offset + 1))
+        
+        // Compute the name and whether the class is foreign.
+        let isForeign = chunk.readByte(offset: offset + 3) == 1 ? true : false
+        let name = "class\(isForeign ? " (foreign)" : "")"
+        
+        // Get the number of fields.
+        let fieldCount = Int(chunk.readByte(offset: offset + 4))
+        
+        // Get the index of the first field.
+        let fieldFirstIndex = Int(chunk.readByte(offset: offset + 5))
+        
+        offset += 6
+        
+        // The instruction's name.
+        var details = name.padding(toLength: 2 * COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        
+        // Its index in the constant table.
+        let indexCol = String(format: "%05d", constantIndex).padding(toLength: COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        details = details + indexCol
+        
+        // The class's name.
+        let className = chunk.constants[constantIndex]!.description
+        details = details + className.padding(toLength: COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        
+        // Append the field count.
+        let fieldCountCol = String(fieldCount).padding(toLength: COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        details = details + fieldCountCol
+        
+        // Append the first field index.
+        details = "\(details)\(fieldFirstIndex)"
+        
+        return details
+    }
     
     /// Returns the details of a constant loading instruction at `offset`/
     /// Increments `offset` to point to the next instruction.
@@ -136,6 +180,55 @@ public struct Disassembler {
         return details
     }
     
+    /// Returns the details of the OP_DEBUG_FIELD_NAME instruction at `offset` and increments `offset` to point to the next instruction.
+    ///
+    /// This instruction takes a two byte (field name index) and a one byte (`Klass.fields` index) operand.
+    ///
+    /// Format:
+    /// `FIELD_NAME  INDEX`
+    private func debugFieldName(chunk: Chunk, offset: inout Int) -> String {
+        var details = "debugFieldName".padding(toLength: 2 * COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        
+        // Get the index of the name of the field in the chunk's constant table.
+        let tableIndex = Int(chunk.readUInt16(offset: offset + 1))
+        
+        // Get the `Klass.fields` index.
+        let index = Int(chunk.readByte(offset: offset + 3))
+        
+        let fieldName = chunk.constants[tableIndex]!.description.padding(toLength: 2 * COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        
+        // Append the name of the field.
+        details += fieldName
+        
+        // Append the index.
+        details += "\(index)"
+        
+        offset += 4
+        
+        return details
+    }
+    
+    /// Returns the details of a field get/set instruction at `offset` and increments `offset` to point to the next instruction.
+    ///
+    /// The operand is the index of the field in the instance's `fields` array.
+    /// Format:
+    /// `INSTRUCTION_NAME  FIELDS_INDEX`
+    private func fieldInstruction(opcode: Opcode, chunk: Chunk, offset: inout Int) -> String {
+        // Get index of the constant.
+        let fieldIndex = Int(chunk.readByte(offset: offset + 1))
+        
+        // The instruction's name.
+        var details = String(describing: opcode).padding(toLength: 2 * COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        
+        // The field index.
+        let fieldIndexCol = String(format: "%05d", fieldIndex)
+        details = details + fieldIndexCol
+        
+        offset += 2
+        
+        return details
+    }
+    
     /// Returns the details of an instruction (at `offset`) that takes a single byte operand
     /// Increments `offset` to point to the next instruction.
     ///
@@ -154,6 +247,143 @@ public struct Disassembler {
         return details
     }
     
+    /// Returns the details of an invoke instruction at `offset` and increments `offset` to point to the next instruction.
+    ///
+    /// Returns the instruction's name, the constant's index in the pool, the method's signature and the argument count.
+    ///
+    /// Format:
+    /// `INSTRUCTION  METHOD_NAME_INDEX  METHOD_NAME  ARGCOUNT`
+    private func invokeInstruction(opcode: Opcode, chunk: Chunk, offset: inout Int) throws -> String {
+        var index: Int
+        var argCount: Int
+        switch opcode {
+        case .invoke:
+            index = Int(chunk.readByte(offset: offset + 1))
+            argCount = Int(chunk.readByte(offset: offset + 2))
+            offset += 3
+            
+        case .invokeLong:
+            index = Int(chunk.readUInt16(offset: offset + 1))
+            argCount = Int(chunk.readByte(offset: offset + 3))
+            offset += 4
+            
+        default:
+            throw DisassemblerError.unknownOpcode(opcode: opcode, offset: offset)
+        }
+        
+        // The instruction's name.
+        var details = String(describing: opcode).padding(toLength: 2 * COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        
+        // Append the index in the pool.
+        details += String(format: "%05d", index).padding(toLength: COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        
+        // Append the method's name.
+        let methodName = chunk.constants[index]!.description
+        details += methodName.padding(toLength: 2 * COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        
+        // Append the argument count.
+        let argCountString = String(argCount).padding(toLength: 2 * COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        details += argCountString
+        
+        return details
+    }
+    
+    /// Returns the details of the `localVarDeclaration` instruction at `offset`
+    /// and increments `offset` to point to the next instruction.
+    ///
+    /// This instruction takes a two byte (name index) and a one byte (slot index) operand.
+    ///
+    /// Format:
+    /// `VAR_NAME  SLOT`
+    private func localVarDeclaration(chunk: Chunk, offset: inout Int) -> String {
+        // The instruction's name.
+        var details = "localVarDeclaration".padding(toLength: 2 * COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        
+        // Get the index of the name of the variable in the chunk's constant table.
+        let index = Int(chunk.readUInt16(offset: offset + 1))
+        
+        // Get the local slot.
+        let slot = chunk.readByte(offset: offset + 3)
+        
+        // Append the name of the variable.
+        details += chunk.constants[index]!.description.padding(toLength: 2 * COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        
+        // Append the slot.
+        details += "\(slot)"
+        
+        offset += 4
+        
+        return details
+    }
+    
+    /// Returns the details of a jump instruction at `offset` and increments `offset` to point to the next instruction.
+    ///
+    /// Jump instructions take a two byte operand (the jump offset)
+    /// If `negative` then this is a backwards jump.
+    ///
+    /// Format:
+    /// `INSTRUCTION_NAME  OFFSET -> DESTINATION`
+    private func jumpInstruction(opcode: Opcode, negative: Bool, chunk: Chunk, offset: inout Int) -> String {
+        // The instruction's name.
+        var details = String(describing: opcode).padding(toLength: 2 * COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        
+        // Append the destination offset.
+        let jump = Int(chunk.readUInt16(offset: offset + 1))
+        let destination = offset + 3 + (negative ? -1 : 1) * jump
+        let destCol = "\(offset) -> \(destination)"
+        details = details + destCol.padding(toLength: 2 * COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        
+        offset += 3
+        
+        return details
+    }
+    
+    /// Returns the details of a method instruction at `offset` and increments `offset` to point to the next instruction.
+    ///
+    /// We return the instruction's name, the index of the method's name in the constant pool, the method name and if it's a static or instance method.
+    ///
+    /// The `method` instruction takes a two byte operand (for the index of the method's signature in the constant pool) and a single byte
+    /// operand specifying if the method is static (1) or instance (0).
+    /// The `foreignMethod` instruction first takes a two byte operand for the index of the signature in the constant pool. It then takes a single byte operand specifying the arity (we don't print this) and finally a single byte operand
+    /// specifying if the method is static (1) or instance (0).
+    /// 
+    /// Format:
+    /// `INSTRUCTION_NAME  POOL_INDEX  METHOD_NAME  STATIC/INSTANCE?`
+    private func methodInstruction(opcode: Opcode, chunk: Chunk, offset: inout Int) throws -> String {
+        let constantIndex: Int
+        let isStatic: Bool
+        let name = String(describing: opcode)
+        switch opcode {
+        case .method:
+            constantIndex = Int(chunk.readUInt16(offset: offset + 1))
+            isStatic = chunk.readByte(offset: offset + 3) == 1 ? true : false
+            offset += 4
+            
+        case .foreignMethod:
+            constantIndex = Int(chunk.readUInt16(offset: offset + 1))
+            // Note `chunk.readByte(offset: offset + 3)` is the arity (which we will ignore).
+            isStatic = chunk.readByte(offset: offset + 4) == 1 ? true : false
+            offset += 5
+            
+        default:
+            throw DisassemblerError.unknownOpcode(opcode: opcode, offset: offset)
+        }
+        
+        // The instructions name.
+        var details = name.padding(toLength: 2 * COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        
+        // Append the constant table index.
+        details += String(format: "%05d", constantIndex).padding(toLength: COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        
+        // Append the method's name.
+        details += chunk.constants[constantIndex]!.description.padding(toLength: 2 * COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        
+        // Append if this a static or instance method.
+        details += isStatic ? "static" : "instance"
+        
+        return details
+    }
+    
     /// Returns the details of a simple instruction at `offset`
     /// Increments `offset` to point to the next instruction.
     ///
@@ -161,8 +391,88 @@ public struct Disassembler {
     /// Format:
     /// `INSTRUCTION_NAME`
     private func simpleInstruction(opcode: Opcode, offset: inout Int) -> String {
-        var name = String(describing: opcode).replacingOccurrences(of: "_", with: "")
+        let name = String(describing: opcode).replacingOccurrences(of: "_", with: "")
         offset += 1
         return name.padding(toLength: COLUMN_WIDTH, withPad: " ", startingAt: 0)
+    }
+    
+    /// Returns the details of a `superConstructor` instruction at `offset`.
+    /// Increments `offset` to point to the next instruction.
+    ///
+    /// Prints the instruction's name, the superclass's name and the argument count.
+    ///
+    /// Format:
+    /// `INSTRUCTION  SUPERCLASS_NAME  ARGCOUNT`
+    private func superConstructor(chunk: Chunk, offset: inout Int) -> String {
+        let superNameIndex = Int(chunk.readUInt16(offset: offset + 1))
+        let argCount = Int(chunk.readByte(offset: offset + 3))
+        
+        offset += 4
+        
+        // The instruction's name.
+        var details = "superConstructor".padding(toLength: 2 * COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        
+        // Append the superclass name.
+        details += chunk.constants[superNameIndex]!.description.padding(toLength: 2 * COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        
+        // Append the argument count.
+        let argCountString = argCount.description.padding(toLength: 2 * COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        details += argCountString
+        
+        return details
+    }
+    
+    /// Returns the details of a `superInvoke` instruction at `offset` and increments `offset` to point to the next instruction.
+    ///
+    /// Prints the instruction's name, the superclass's name, the method signature to invoke and the argument count.
+    ///
+    /// Format:
+    /// `INSTRUCTION  SUPERCLASS_NAME  SIGNATURE   ARGCOUNT`
+    private func superInvoke(chunk: Chunk, offset: inout Int) -> String {
+        let superNameIndex = Int(chunk.readUInt16(offset: offset + 1))
+        let sigIndex = Int(chunk.readUInt16(offset: offset + 3))
+        let argCount = Int(chunk.readByte(offset: offset + 5))
+        
+        offset += 6
+        
+        // The instruction's name.
+        var details = "superInvoke".padding(toLength: 2 * COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        
+        // Append the superclass name.
+        details += chunk.constants[superNameIndex]!.description.padding(toLength: 2 * COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        
+        // Append the signature name.
+        details += chunk.constants[sigIndex]!.description.padding(toLength: 2 * COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        
+        // Append the argument count.
+        let argCountString = String(argCount).padding(toLength: 2 * COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        details += argCountString
+        
+        return details
+    }
+    
+    /// Returns the details of a `superSetter` instruction at `offset`
+    /// Increments `offset` to point to the next instruction.
+    ///
+    /// Prints the instruction's name, the superclass's name and the setter signature to invoke.
+    ///
+    /// Format:
+    /// `INSTRUCTION  SUPERCLASS_NAME  SIGNATURE`
+    private func superSetter(chunk: Chunk, offset: inout Int) -> String {
+        let superNameIndex = Int(chunk.readUInt16(offset: offset + 1))
+        let sigIndex = Int(chunk.readUInt16(offset: offset + 3))
+        
+        offset += 5
+        
+        // The instruction's name.
+        var details = "superSetter".padding(toLength: 2 * COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        
+        // Append the superclass name.
+        details += chunk.constants[superNameIndex]!.description.padding(toLength: 2 * COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        
+        // Append the signature name.
+        details += chunk.constants[sigIndex]!.description.padding(toLength: 2 * COLUMN_WIDTH, withPad: " ", startingAt: 0)
+        
+        return details
     }
 }
