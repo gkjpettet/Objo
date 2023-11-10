@@ -1083,9 +1083,12 @@ public class Compiler: ExprVisitor, StmtVisitor {
         endScope()
     }
     
+    /// Compiles a break point.
     public func visitBreakpoint(stmt: BreakpointStmt) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling breakpoints is not yet implemented", location: stmt.location)
+        currentLocation = stmt.location
+        
+        // Break points have no effect in production builds.
+        if debugMode { emitOpcode(.breakpoint) }
     }
     
     public func visitCase(stmt: CaseStmt) throws {
