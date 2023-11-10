@@ -1764,9 +1764,19 @@ public class Compiler: ExprVisitor, StmtVisitor {
         }
     }
     
+    /// Compiles retrieving a static field.
     public func visitStaticField(expr: StaticFieldExpr) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling static field access is not yet implemented", location: expr.location)
+        currentLocation = expr.location
+        
+        if !isCompilingMethodOrConstructor {
+            try error(message: "Static fields can only be accessed from within a method or a constructor.")
+        }
+        
+        // Add the name of the field to the constants table and get its index.
+        let index = try addConstant(value: .string(expr.name))
+        
+        // Tell the VM to push the field's value on to the stack.
+        try emitVariableOpcode(shortOpcode: .getStaticField, longOpcode: .getStaticFieldLong, operand: index)
     }
     
     public func visitStaticFieldAssignment(expr: StaticFieldAssignmentExpr) throws {
