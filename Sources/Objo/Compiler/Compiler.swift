@@ -1779,9 +1779,14 @@ public class Compiler: ExprVisitor, StmtVisitor {
         try emitVariableOpcode(shortOpcode: .getStaticField, longOpcode: .getStaticFieldLong, operand: index)
     }
     
+    /// Compiles a static field assignment.
     public func visitStaticFieldAssignment(expr: StaticFieldAssignmentExpr) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling static field assignment is not yet implemented", location: expr.location)
+        currentLocation = expr.location
+        
+        // Evaluate the value to assign, leaving it on the top of the stack.
+        try expr.value.accept(self)
+        
+        try staticFieldAssignment(fieldName: expr.name)
     }
     
     /// The VM should produce a string literal.
