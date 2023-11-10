@@ -961,6 +961,49 @@ public class Compiler: ExprVisitor, StmtVisitor {
         }
     }
     
+    /// Compiles a logical `and` expression.
+    private func logicalAnd(expr: LogicalExpr) throws {
+        currentLocation = expr.location
+        
+        // Compile the left hand operand to leave it on the VM's stack.
+        try expr.left.accept(self)
+        
+        // Since `and` short circuits, if the left hand operand is `false` then the
+        // whole expression is `false` so we jump over the right operand and leave the left
+        // operand on the top of the stack.
+        let endJump = emitJump(instruction: .jumpIfFalse, location: expr.location)
+        
+        // If the left hand operand was false then we need to pop it off the stack.
+        emitOpcode(.pop)
+        
+        // Compile the right hand operand.
+        try expr.right.accept(self)
+        
+        // Back-patch the jump instruction.
+        try patchJump(offset: endJump)
+    }
+    
+    /// Compiles a logical `or` expression.
+    private func logicalOr(expr: LogicalExpr) throws {
+        currentLocation = expr.location
+        
+        // Compile the left hand operand to leave it on the VM's stack.
+        try expr.left.accept(self)
+        
+        // Since the logical operators short circuit, if the left hand operand is true then
+        // we jump over the right hand operand.
+        let endJump = emitJump(instruction: .jumpIfTrue, location: expr.location)
+        
+        // If the left operand was false we need to pop it off the stack.
+        emitOpcode(.pop)
+        
+        // The right hand operand only gets evaluated if the left operand was false.
+        try expr.right.accept(self)
+        
+        // Back-patch the jump instruction.
+        try patchJump(offset: endJump)
+    }
+    
     /// Compiles the body of a loop and tracks its extent so that contained `break`
     /// statements can be handled correctly.
     private func loopBody(_ body: BlockStmt?) throws {
@@ -1498,9 +1541,25 @@ public class Compiler: ExprVisitor, StmtVisitor {
         emitOpcode8(opcode: .list, operand: UInt8(expr.elements.count), location: expr.location)
     }
     
+    /// The compiler is visiting a logical expression (or, and, xor).
     public func visitLogical(expr: LogicalExpr) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling logical expressions is not yet implemented", location: expr.location)
+        currentLocation = expr.location
+        
+        switch expr.op {
+        case .and:
+            try logicalAnd(expr: expr)
+            
+        case .or:
+            try logicalOr(expr: expr)
+            
+        case .xor:
+            try expr.left.accept(self)
+            try expr.right.accept(self)
+            emitOpcode(.logicalXor)
+            
+        default:
+            try error(message: "Unsupported logical operator: \(expr.op).")
+        }
     }
     
     public func visitMethodInvocation(expr: MethodInvocationExpr) throws {
