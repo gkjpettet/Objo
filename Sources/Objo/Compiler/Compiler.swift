@@ -865,6 +865,26 @@ public class Compiler: ExprVisitor, StmtVisitor {
         emitOpcode(.pop)
     }
     
+    /// Returns the field index of `fieldName` for *this* class (not any superclasses).
+    /// This is the index the runtime will access.
+    /// If there is no field with this name then a new one is created.
+    private func fieldIndex(fieldName: String) throws -> Int {
+        if currentClass == nil {
+            try error(message: "Instance fields can only be accessed from within an instance method or constructor.")
+        }
+        
+        for (i, field) in currentClass!.fields.enumerated() {
+            if field == fieldName {
+                return currentClass!.fieldStartIndex + i
+            }
+        }
+        
+        // Doesn't exist yet. Add it.
+        currentClass!.fields.append(fieldName)
+        
+        return currentClass!.fieldStartIndex + currentClass!.fields.count - 1
+    }
+    
     /// Checks this compiler's known classes and all of its enclosing compilers for the named class.
     private func findClass(name: String) -> ClassData? {
         // Known to this compiler?
@@ -1380,9 +1400,25 @@ public class Compiler: ExprVisitor, StmtVisitor {
         try emitVariableOpcode(shortOpcode: .getGlobal, longOpcode: .getGlobalLong, operand: nameIndex)
     }
     
+    /// Compiles retrieving an instance field.
     public func visitField(expr: FieldExpr) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling field access is not yet implemented", location: expr.location)
+        if !isCompilingMethodOrConstructor {
+            try error(message: "Instance fields can only be accessed from within an instance method or constructor.")
+        }
+        
+        if self.isStaticMethod {
+            try error(message: "Instance fields can only be accessed from within an instance method, not a static method.")
+        }
+        
+        // Get the index in this class' `fields` array to access at runtime.
+        let index = try fieldIndex(fieldName: expr.name)
+        
+        if index > 255 {
+            try error(message: "Classes cannot have more than 255 fields, including inherited ones.")
+        }
+        
+        // Tell the VM to produce the field's value.
+        emitOpcode8(opcode: .getField, operand: UInt8(index))
     }
     
     public func visitFieldAssignment(expr: FieldAssignmentExpr) throws {
