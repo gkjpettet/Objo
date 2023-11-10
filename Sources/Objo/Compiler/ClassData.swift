@@ -25,6 +25,9 @@ public class ClassData {
     /// The names of all instance fields created by this class in the order they are created.
     public var fields: [String] = []
     
+    /// The name of this class.
+    public var name: String { return declaration.name }
+    
     /// Optional data about this class's superclass.
     public let superclass: ClassData?
     

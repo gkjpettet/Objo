@@ -29,6 +29,11 @@ public class Compiler: ExprVisitor, StmtVisitor {
     /// The time take for the last compilation took.
     private var compileTime: TimeInterval?
     
+    /// `true` if the currently compiler is compiling a method or constructor.
+    private var isCompilingMethodOrConstructor: Bool {
+        return self.type == .method || self.type == .constructor
+    }
+    
     /// The core library source code.
     private var coreLibrarySource: String
     
@@ -304,6 +309,95 @@ public class Compiler: ExprVisitor, StmtVisitor {
         locals.append(LocalVariable(identifier: identifier, depth: initialised ? scopeDepth : -1))
     }
     
+    /// Compiles an assignment to a variable or setter named `name`.
+    ///
+    /// The value to assign is assumed to already be on the top of the stack.
+    ///
+    /// - Throws CompilerError if:
+    ///     - This is a local variable and there are > 255 local variables in scope.
+    ///     -
+    private func assignment(name: String) throws {
+        // Check for the simplest case (an assignment to a local variable).
+        let stackIndex = try resolveLocal(name: name)
+        if stackIndex != -1 {
+            if stackIndex > 255 {
+                try error(message: "Too many local variables in scope (the maximum is 255).")
+            }
+            emitOpcode8(opcode: .setLocal, operand: UInt8(stackIndex))
+            return
+        }
+        
+        var isSetter = false
+        var assumeGlobal = false
+        
+        // Compute the signature, assuming it's a setter method.
+        // This will be ignored if it transpires this is not a setter method call.
+        let signature = try Objo.computeSignature(name: name, arity: 1, isSetter: true)
+        
+        // Is this actually a call to a setter method?
+        if isCompilingMethodOrConstructor {
+            
+            if hierarchyContains(subclass: currentClass, signature: signature, isStatic: false) {
+                // Instance setter method.
+                isSetter = true
+                if self.isStaticMethod {
+                    try error(message: "Cannot call an instance setter method from within a static method.")
+                } else {
+                    // Slot 0 of the call frame will be the instance. Push it onto the stack.
+                    emitOpcode8(opcode: .getLocal, operand: 0)
+                }
+                
+            } else if hierarchyContains(subclass: currentClass, signature: signature, isStatic: true) {
+                // Static setter method.
+                isSetter = true
+                if self.isStaticMethod {
+                    // We're calling a static method from within a static method. Therefore, slot 0 of the call frame
+                    // will be the **class**. Push it onto the stack.
+                    emitOpcode8(opcode: .getLocal, operand: 0)
+                } else {
+                    // We're calling a static method from within an instance method. Therefore, slot 0 of the
+                    // call frame will be the *instance*. Push its class onto the stack.
+                    emitOpcode8(opcode: .getLocalClass, operand: 0)
+                }
+            } else {
+                // Can't find a local variable or setter with this name. Assume it's a global variable.
+                assumeGlobal = true
+            }
+            
+        } else {
+            
+            // Since we're not within a method or a constructor we'll assume this is an assignment to
+            // a global variable.
+            assumeGlobal = true
+        }
+        
+        if assumeGlobal {
+            
+            if globalExists(name: name) {
+                // Add the name of the variable to the chunk's constant table and get its index.
+                let constantIndex = try addConstant(value: .string(name))
+                try emitVariableOpcode(shortOpcode: .setGlobal, longOpcode: .setGlobalLong, operand: constantIndex)
+            } else {
+                try error(message: "Undefined global variable `\(name)`.")
+            }
+            
+        } else if isSetter {
+            // Currently, the top of the stack is the class (if this is a static method) or the instance
+            // (if an instance method) containing the setter and underneath it is the setter's argument.
+            // We need to swap this.
+            emitOpcode(.swap)
+            
+            // Load the method's signature into the chunk's constant table.
+            let signatureIndex = try addConstant(value: .string(signature))
+            
+            // Emit the `invoke` instruction and the index of the setter's signature in the constant table.
+            try emitVariableOpcode(shortOpcode: .invoke, longOpcode: .invokeLong, operand: signatureIndex)
+            
+            // Emit the argument count (always 1 for setters).
+            emitByte(byte: 1)
+        }
+    }
+    
     /// Begins a new scope.
     private func beginScope() {
         scopeDepth += 1
@@ -360,6 +454,12 @@ public class Compiler: ExprVisitor, StmtVisitor {
             // Global variable definition.
             try emitVariableOpcode(shortOpcode: .defineGlobal, longOpcode: .defineGlobalLong, operand: index)
         }
+    }
+    
+    /// Appends a single byte to the current chunk at the current location.
+    /// An optional `location` can be provided.
+    private func emitByte(byte: UInt8, location: Token? = nil) {
+        currentChunk.writeByte(byte, token: location ?? currentLocation!)
     }
     
     /// Adds the `value` to the current chunk's constant pool at the current location and pushes it to the stack.
@@ -487,9 +587,50 @@ public class Compiler: ExprVisitor, StmtVisitor {
         throw CompilerError(message: message, location: location ?? currentLocation)
     }
     
+    /// Checks this compiler's known classes and all of its enclosing compilers for the named class.
+    private func findClass(name: String) -> ClassData? {
+        // Known to this compiler?
+        if knownClasses[name] != nil {
+            return knownClasses[name]
+        }
+        
+        // Walk the compiler hierarchy.
+        var parent: Compiler? = enclosing
+        while parent != nil {
+            if parent!.knownClasses[name] != nil {
+                return parent!.knownClasses[name]
+            } else {
+                parent = parent!.enclosing
+            }
+        }
+        
+        return nil
+    }
+    
     /// Returns `true` if a global variable named `name` has already been defined by this compiler chain.
     private func globalExists(name: String) -> Bool {
         return outermostCompiler.knownGlobals[name] != nil
+    }
+    
+    /// Returns `true` if `subclass` has (or has inherited) a method with `signature`.
+    ///
+    /// - Parameter isStatic: Determines whether or not we search static or instance methods.
+    ///
+    /// Only searches static **or** instance methods. Not both.
+    private func hierarchyContains(subclass: ClassData? , signature: String, isStatic: Bool) -> Bool {
+        guard let subclass = subclass else {
+            return false
+        }
+        
+        if subclass.declaration.hasMethod(signature: signature, isStatic: isStatic) {
+            return true
+        } else {
+            if subclass.superclass != nil {
+                return hierarchyContains(subclass: findClass(name: subclass.superclass!.name), signature: signature, isStatic: isStatic)
+            } else {
+                return false
+            }
+        }
     }
     
     /// Performs a binary operation on two numeric literals, `left` and `right` and tells
@@ -570,11 +711,46 @@ public class Compiler: ExprVisitor, StmtVisitor {
         }
     }
     
+    /// Returns the stack index of the local variable named `name` or `-1` if there is
+    /// no matching local variable with that name.
+    ///
+    /// If `-1` is returned we assume (maybe falsely) that the variable is global.
+    ///
+    /// This works because when we declare a local variable we append it to `locals`.
+    /// This means that the first declared variable is at index 0, the next one at index 1 and so on.
+    /// Therefore the `locals` array in the compiler has the _exact_ same layout as the VM's stack
+    /// will have at runtime. Therefore the variable's index in `locals` is the same as its
+    /// stack slot, relative to its call frame.
+    private func resolveLocal(name: String) throws -> Int {
+        // Walk the list of local variables that are currently in scope.
+        // If one is named `name` then we've found it.
+        // We walk backwards so we find the _last_ declared variable named `name`
+        // which ensures that inner local variables correctly shadow locals with the
+        // same name in surrounding scopes.
+        for (i, local) in locals.reversed().enumerated() {
+            if name == local.name {
+                // Ensure that this local variable has been initialised.
+                if local.depth == -1 {
+                    try error(message: "You can't read a local variable in its own initialiser.")
+                }
+                return i
+            }
+        }
+        
+        // There is no local variable with this name. It should therefore be assumed to be global.
+        return -1
+    }
+    
     // MARK: - `ExprVisitor` protocol methods
     
+    /// Compiles the assignment of a value to a variable.
     public func visitAssignment(expr: AssignmentExpr) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling assignment is not yet implemented", location: expr.location)
+        currentLocation = expr.location
+        
+        // Compile the value to be assigned.
+        try expr.value.accept(self)
+        
+        try assignment(name: expr.name)
     }
     
     public func visitBareInvocation(expr: BareInvocationExpr) throws {

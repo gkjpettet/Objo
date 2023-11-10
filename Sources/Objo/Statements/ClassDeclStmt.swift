@@ -48,4 +48,43 @@ public struct ClassDeclStmt: Stmt {
     public func accept(_ visitor: StmtVisitor) throws {
         try visitor.visitClassDeclaration(stmt: self)
     }
+    
+    /// Returns `true` if this class has a method with `signature`.
+    ///
+    /// - Parameter isStatic: If `true` then static methods are searched. If `false` then
+    /// only instance methods are searched.
+    public func hasMethod(signature: String, isStatic: Bool) -> Bool {
+        if isStatic {
+            // Check static native methods.
+            for (_, method) in self.staticMethods {
+                if method.signature == signature {
+                    return true
+                }
+            }
+            
+            // Check static foreign methods.
+            for (_, method) in self.foreignStaticMethods {
+                if method.signature == signature {
+                    return true
+                }
+            }
+            
+        } else {
+            // Check native methods.
+            for (_, method) in self.methods {
+                if method.signature == signature {
+                    return true
+                }
+            }
+            
+            // Check foreign methods.
+            for (_, method) in self.foreignInstanceMethods {
+                if method.signature == signature {
+                    return true
+                }
+            }
+        }
+        
+        return false
+    }
 }
