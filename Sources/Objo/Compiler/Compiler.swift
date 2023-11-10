@@ -673,9 +673,30 @@ public class Compiler: ExprVisitor, StmtVisitor {
         emitOpcode(.nothing)
     }
     
+    /// The VM should produce a numeric constant.
     public func visitNumber(expr: NumberLiteral) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling number literals is not yet implemented", location: expr.location)
+        currentLocation = expr.location
+        
+        // The VM has dedicated instructions for producing certain integer constants that are commonly used.
+        if expr.isInteger {
+            switch expr.value {
+            case 0.0:
+                emitOpcode(.load0)
+                
+            case 1.0:
+                emitOpcode(.load1)
+                
+            case 2.0:
+                emitOpcode(.load2)
+
+            default:
+                // Add this number to the chunk's constant table.
+                let index = currentChunk.addConstant(.number(expr.value))
+                
+                // Tell the VM to retrieve this constant.
+                try emitVariableOpcode(shortOpcode: .constant, longOpcode: .constantLong, operand: index)
+            }
+        }
     }
     
     public func visitPostfix(expr: PostfixExpr) throws {
