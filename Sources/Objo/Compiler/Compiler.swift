@@ -1062,6 +1062,84 @@ public class Compiler: ExprVisitor, StmtVisitor {
         currentLoop = newLoop
     }
     
+    /// Compiles a call to a superclass constructor.
+    ///
+    /// E.g: `super` or `super(argN)`.
+    /// Assumes the compiler is currently compiling a constructor and that the
+    /// current class being compiled has a superclass.
+    private func superConstructorInvocation(arguments: [Expr], location: Token) throws {
+        currentLocation = location
+        
+        // Check the superclass has a constructor with this many arguments.
+        if arguments.count > 0 {
+            var superHasMatchingConstructor = false
+            for constructor in currentClass!.superclass!.declaration.constructors {
+                if constructor.arity == arguments.count {
+                    superHasMatchingConstructor = true
+                    break
+                }
+            }
+            if !superHasMatchingConstructor {
+                try error(message: "The superclass (`\(currentClass!.superclass!.name)`) of `\(currentClass!.name)` does not define a constructor with \(arguments.count) arguments.")
+            }
+        }
+        
+        // Load the superclass' name into the constant pool.
+        let superNameIndex = try addConstant(value: .string(currentClass!.superclass!.name))
+        
+        // Push `this` onto the stack. It's always at slot 0 of the call frame.
+        emitOpcode8(opcode: .getLocal, operand: 0)
+        
+        // Compile the arguments.
+        for arg in arguments {
+            try arg.accept(self)
+        }
+        
+        // Emit the `superConstructor` instruction, the index of the superclass' name
+        // and the argument count.
+        emitOpcode(.superConstructor, location: location)
+        emitUInt16(value: UInt16(superNameIndex), location: location)
+        emitByte(byte: UInt8(arguments.count), location: location)
+    }
+    
+    /// Compiles a method invocation on `super`. E.g: super.method(arg1, arg2).
+    ///
+    /// Assumes the compiling is currently compiling a method within a class
+    /// and that the current class has a superclass.
+    private func superMethodInvocation(signature: String, arguments: [Expr], location: Token) throws {
+        currentLocation = location
+        
+        if currentClass == nil {
+            try error(message: "`super` can only be used within a method or constructor.")
+        }
+        
+        // Check the superclass has a matching method.
+        if !hierarchyContains(subclass: currentClass!.superclass, signature: signature, isStatic: false) {
+            try error(message: "The superclass (`\(currentClass!.superclass!.name)`) of `\(currentClass!.name)` does not define `\(signature)`.")
+        }
+        
+        // Load the superclass' name into the constant pool.
+        let superNameIndex = try addConstant(value: .string(currentClass!.superclass!.name))
+        
+        // Push `this` onto the stack. It's always at slot 0 of the call frame.
+        emitOpcode8(opcode: .getLocal, operand: 0)
+        
+        // Load the method's signature into the constant pool.
+        let signatureIndex = try addConstant(value: .string(signature))
+        
+        // Compile the arguments.
+        for arg in arguments {
+            try arg.accept(self)
+        }
+        
+        // Emit the `superInvoke` instruction, the superclass name, the index of the
+        // method's signature in the constant pool and the argument count.
+        emitOpcode(.superInvoke, location: location)
+        emitUInt16(value: UInt16(superNameIndex), location: location)
+        emitUInt16(value: UInt16(signatureIndex), location: location)
+        emitByte(byte: UInt8(arguments.count), location: location)
+    }
+    
     // MARK: - `ExprVisitor` protocol methods
     
     /// Compiles the assignment of a value to a variable.
@@ -1148,9 +1226,41 @@ public class Compiler: ExprVisitor, StmtVisitor {
         emitByte(byte: UInt8(expr.arguments.count), location: expr.location)
     }
     
+    /// Compiles a bare super invocation. E.g: `super` or `super(argN)`
     public func visitBareSuperInvocation(expr: BareSuperInvocationExpr) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling bare super invocations is not yet implemented", location: expr.location)
+        currentLocation = expr.location
+        
+        if !isCompilingMethodOrConstructor {
+            try error(message: "`super` can only be used within a method or constructor.")
+        }
+        
+        if currentClass == nil {
+            try error(message: "`super` can only be used within a class.")
+        }
+        
+        if currentClass!.superclass == nil {
+            try error(message: "Class `\(currentClass!.name)` does not have a superclass.")
+        }
+        
+        // Are we calling the superclass's constructor?
+        if self.type == .constructor {
+            // Assert that calls to constructors have parentheses (even when there are no arguments).
+            // This is an Objo language requirement.
+            if !expr.hasParentheses {
+                try error(message: "A superclass constructor must have an argument list, even if empty.")
+            }
+            try superConstructorInvocation(arguments: expr.arguments, location: expr.location)
+            return
+        }
+        
+        if self.type == .method {
+            // This is a call to a method on the superclass with the same name as
+            // the method that we're currently compiling.
+            try superMethodInvocation(signature: function!.signature, arguments: expr.arguments, location: expr.location)
+            return
+        }
+        
+        try error(message: "`super` can only be used within a method or constructor.")
     }
     
     /// Compiles a binary expression.
