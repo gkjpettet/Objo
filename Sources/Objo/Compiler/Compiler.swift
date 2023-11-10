@@ -11,6 +11,88 @@ public class Compiler: ExprVisitor, StmtVisitor {
         
     // MARK: - Class constants
     
+    /// Maps the number of bytes used for operands for a particular opcode. Key = Opcode, value = number of bytes used.
+    public static let opcodeOperandByteCount: [Opcode : Int] = [
+        .add                : 0,
+        .add1               : 0,
+        .assert             : 0,
+        .breakpoint         : 0,
+        .bitwiseOr          : 0,
+        .bitwiseAnd         : 0,
+        .bitwiseNot         : 0,
+        .bitwiseXor         : 0,
+        .call               : 1, // arg count (ui8)
+        .constant           : 1, // constant pool index (ui8)
+        .constantLong       : 2, // constant pool index (ui16)
+        .constructor        : 1, // parameter count (ui8)
+        .class_             : 5, // class name, constant index (ui16), isForeign (0 false, 1 true), hierarchy field count, fieldStartIndex
+        .divide             : 0,
+        .defineGlobal       : 1, // constant pool index of the constant's name (ui8)
+        .defineNothing      : 0,
+        .debugFieldName     : 3, // field name index in constant pool (ui16), index of the field in `Klass.fields` (ui8)
+        .defineGlobalLong   : 2, // constant pool index of the constant's name (ui16)
+        .exit               : 0,
+        .equal              : 0,
+        .false_             : 0,
+        .foreignMethod      : 4, // constant pool index of the signature (ui16), arity (ui8), isStatic (0 false, 1 true)
+        .greater            : 0,
+        .getField           : 1, // index in the current class's `fields` array to access (ui8)
+        .getLocal           : 1, // stack slot where the local variable is (ui8)
+        .getGlobal          : 1, // constant pool index of the name of the class (ui8)
+        .greaterEqual       : 0,
+        .getGlobalLong      : 2, // constant pool index of the name of the class (ui16)
+        .getLocalClass      : 1, // stack slot (ui8) where the local variable is. The VM will push it's class on to the stack.
+        .getStaticField     : 1, // constant pool index (ui8) of the name of the static field
+        .getStaticFieldLong : 2, // constant pool index (ui16) of the name of the static field
+        .invoke             : 2, // constant pool index (ui8) of the method to invoke's signature, arg count (ui8)
+        .inherit            : 0,
+        .is_                : 0,
+        .invokeLong         : 3, // constant pool index (ui16) of the method to invoke's signature, arg count (ui8)
+        .jump               : 2, // the number of bytes to jump (ui16)
+        .jumpIfTrue         : 2, // the number of bytes to jump (ui16)
+        .jumpIfFalse        : 2, // the number of bytes to jump (ui16)
+        .keyValue           : 0,
+        .less               : 0,
+        .list               : 1, // the number of initial elements (ui8)
+        .loop               : 2, // the number of bytes to jump (ui16)
+        .load0              : 0,
+        .load1              : 0,
+        .load2              : 0,
+        .lessEqual          : 0,
+        .loadMinus1         : 0,
+        .loadMinus2         : 0,
+        .logicalXor         : 0,
+        .localVarDeclaration: 3, // constant pool index (ui16) of the variable name, stack slot where the variable is (ui8)
+        .map                : 1, // the number of initial key-value pairs (ui8)
+        .method             : 3, // constant pool index (ui16) of the method signature, isStatic (0 = false, 1 = true)
+        .modulo             : 0,
+        .multiply           : 0,
+        .not                : 0,
+        .negate             : 0,
+        .nothing            : 0,
+        .notEqual           : 0,
+        .pop                : 0,
+        .popN               : 1, // the number of values to pop off the stack (ui8)
+        .return_            : 0,
+        .rangeExclusive     : 0,
+        .rangeInclusive     : 0,
+        .swap               : 0,
+        .subtract           : 0,
+        .subtract1          : 0,
+        .setField           : 1, // the index of the field (ui8)
+        .setLocal           : 1, // the stack slot where the local variable is (ui8)
+        .setGlobal          : 1, // constant pool index (ui8) of the name of the variable to get
+        .shiftLeft          : 0,
+        .shiftRight         : 0,
+        .superInvoke        : 5, // constant pool index of the name of the superclass (ui16), constant pool index of the method name (ui16), arg count (ui8)
+        .superSetter        : 4, // constant pool index of the name of the superclass (ui16), constant pool index of the setter signature (ui16)
+        .superConstructor   : 3, // constant pool index of the name of the superclass (ui16), argt count (ui8)
+        .setGlobalLong      : 2, // constant pool index (ui16) of the name of the variable to get
+        .setStaticField     : 1, // constant pool index (ui16) of the field name to assign the value on the top of the stack to
+        .setStaticFieldLong : 2, // constant pool index (ui16) of the field name to assign the value on the top of the stack to
+        .true_              : 0
+    ]
+    
     /// The script ID value the compiler uses for the core library.
     public static let CORE_LIBRARY_SCRIPT_ID: Int = -1
     
@@ -527,6 +609,22 @@ public class Compiler: ExprVisitor, StmtVisitor {
         return index
     }
     
+    /// Emits the jump `instruction` occuring at source `location` (or the current location if `nil`)
+    /// and writes a placeholder (&hFFFF) for the jump offset.
+    /// Returns the offset of the jump instruction.
+    ///
+    /// We can jump a maximum of &hFFFF (65535) bytes.
+    private func emitJump(instruction: Opcode, location: Token? = nil) -> Int {
+        let loc = location ?? currentLocation!
+        
+        emitOpcode(instruction, location: loc)
+        
+        emitByte(byte: 0xFF, location: loc)
+        emitByte(byte: 0xFF, location: loc)
+        
+        return currentChunk.length - 2
+    }
+    
     /// Emits a new loop instruction which unconditionally jumps backwards to `loopStart`.
     /// If `location` is `nil` we use the current location.
     private func emitLoop(loopStart: Int, location: Token? = nil) throws {
@@ -624,6 +722,54 @@ public class Compiler: ExprVisitor, StmtVisitor {
         }
     }
     
+    /// Ends the current innermost loop. Patches up all jumps and exits now that
+    /// we know where the end of the loop is.
+    private func endLoop() throws {
+        guard let loop = currentLoop else {
+            try error(message: "Not currently compiling a loop.")
+            return
+        }
+        
+        // Jump back to the start of the current loop if the condition evaluates to truthy.
+        try emitLoop(loopStart: loop.start, location: loop.startToken)
+        
+        // Back-patch the jump.
+        try patchJump(offset: loop.exitJump)
+        
+        // The condition must have been falsey - pop the condition off the stack.
+        emitOpcode(.pop)
+        
+        // Find any `exit` placeholder instructions (which will be `.exit` in the
+        // bytecode) and replace them with real jumps.
+        var i = loop.bodyOffset
+        while i < currentChunk.length {
+            if currentChunk.code[i] == Opcode.exit.rawValue {
+                currentChunk.code[i] = Opcode.jump.rawValue
+                try patchJump(offset: i + 1)
+                i += 3
+            } else {
+                // Skip this instruction and its operands.
+                
+                // Firsyt get the opcode at this offset.
+                guard let opcode = Opcode(rawValue: currentChunk.code[i]) else {
+                    try error(message: "The value at offset \(i) is not a valid opcode.")
+                    return
+                }
+                
+                // Determine how many bytes are used for this opcode's operands (if any)
+                guard let bytesToSkip = Compiler.opcodeOperandByteCount[opcode] else {
+                    try error(message: "Unable to determine the number of bytes used for the operand(s) for opcode `\(opcode)`.")
+                    return
+                }
+                
+                i += bytesToSkip + 1
+            }
+        }
+        
+        // Mark that we're exiting this loop.
+        currentLoop = loop.enclosing
+    }
+    
     /// Ends the current scope.
     private func endScope() {
         scopeDepth -= 1
@@ -645,6 +791,23 @@ public class Compiler: ExprVisitor, StmtVisitor {
     /// If the error is not at the current location, `location` may be passed instead.
     private func error(message: String, location: Token? = nil) throws {
         throw CompilerError(message: message, location: location ?? currentLocation)
+    }
+    
+    /// Emits the `jumpIfTrue` instruction and a `pop` instruction to test the loop condition and
+    /// potentially exit the loop. Keeps track of the instruction so we can patch it
+    /// later once we know where the end of the body is.
+    ///
+    /// Will throw if there is no loop currently being compiled.
+    private func exitLoopIfTrue() throws {
+        guard let loop = currentLoop else {
+            try error(message: "Not currently compiling a loop.")
+            return
+        }
+        
+        loop.exitJump = emitJump(instruction: .jumpIfTrue)
+        
+        // Pop the condition before executing the body.
+        emitOpcode(.pop)
     }
     
     /// Checks this compiler's known classes and all of its enclosing compilers for the named class.
@@ -690,6 +853,21 @@ public class Compiler: ExprVisitor, StmtVisitor {
             } else {
                 return false
             }
+        }
+    }
+    
+    /// Compiles the body of a loop and tracks its extent so that contained `break`
+    /// statements can be handled correctly.
+    private func loopBody(_ body: BlockStmt?) throws {
+        if currentLoop == nil {
+            try error(message: "Not currently compiling a loop.")
+        }
+        
+        currentLoop!.bodyOffset = currentChunk.length
+        
+        // Compile the optional loop body.
+        if body != nil {
+            try body?.accept(self)
         }
     }
     
@@ -771,6 +949,26 @@ public class Compiler: ExprVisitor, StmtVisitor {
         }
     }
     
+    /// Takes the offset in the current chunk of the start of a jump placeholder and
+    /// replaces that placeholder with the the amount needed to added to the VM's instruction pointer to
+    /// cause it to jump to the current position in the chunk.
+    private func patchJump(offset: Int) throws {
+        // Compute the distance to jump to get from the end of the placeholder operand to
+        // the current offset in the chunk.
+        // -2 to adjust for the bytecode for the jump offset itself.
+        let jumpDistance = currentChunk.length - offset - 2
+        
+        if jumpDistance > MAX_JUMP {
+            try error(message: "Maximum jump distance exceeded.")
+        }
+        
+        // Replace the 16-bit placeholder with the jump distance.
+        let msb = UInt8((jumpDistance >> 8) & 0xFF)
+        let lsb = UInt8(jumpDistance & 0xFF)
+        currentChunk.code[offset] = msb
+        currentChunk.code[offset + 1] = lsb
+    }
+    
     /// Returns the stack index of the local variable named `name` or `-1` if there is
     /// no matching local variable with that name.
     ///
@@ -799,6 +997,14 @@ public class Compiler: ExprVisitor, StmtVisitor {
         
         // There is no local variable with this name. It should therefore be assumed to be global.
         return -1
+    }
+    
+    /// Marks the beginning of a loop. Keeps track of the current instruction so we
+    /// know what to loop back to at the end of the body.
+    private func startLoop(location: Token? = nil) {
+        let newLoop = LoopData(bodyOffset: 0, enclosing: currentLoop, exitJump: 0, scopeDepth: scopeDepth, start: currentChunk.length, startToken: location ?? currentLocation!)
+        
+        currentLoop = newLoop
     }
     
     // MARK: - `ExprVisitor` protocol methods
@@ -1371,9 +1577,20 @@ public class Compiler: ExprVisitor, StmtVisitor {
         try emitLoop(loopStart: currentLoop!.start)
     }
     
+    /// Compiles a `do` loop.
     public func visitDo(stmt: DoStmt) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling `do` statements is not yet implemented", location: stmt.location)
+        currentLocation = stmt.location
+        
+        startLoop()
+        
+        try loopBody(stmt.body)
+        
+        // Compile the condition.
+        try stmt.condition.accept(self)
+        
+        try exitLoopIfTrue()
+        
+        try endLoop()
     }
     
     public func visitElseCase(stmt: ElseCaseStmt) throws {

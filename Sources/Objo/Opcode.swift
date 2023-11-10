@@ -39,7 +39,6 @@ public enum Opcode: UInt8 {
     case getStaticFieldLong
     case greater
     case greaterEqual
-    case greaterGreater
     case inherit
     case invoke
     case invokeLong
@@ -50,7 +49,6 @@ public enum Opcode: UInt8 {
     case keyValue
     case less
     case lessEqual
-    case lessLess
     case list
     case load0
     case load1
