@@ -488,6 +488,61 @@ public class Compiler: ExprVisitor, StmtVisitor {
         scopeDepth += 1
     }
     
+    /// Compiles a call to a global function.
+    /// There is no guarantee that a function exists globally with this name.
+    /// That is determined at runtime.
+    private func callGlobalFunction(name: String, arguments: [Expr], location: Token) throws {
+        currentLocation = location
+        
+        if arguments.count > 255 {
+            try error(message: "A call cannot have more than 255 arguments.")
+        }
+        
+        // Add the name of the method to the constant pool and get its index.
+        let functionNameIndex = try addConstant(value: .string(name))
+        
+        // Retrieve the global function now stored in the constant pool and put it on the stack.
+        try emitVariableOpcode(shortOpcode: .getGlobal, longOpcode: .getGlobalLong, operand: functionNameIndex, location: location)
+        
+        // Compile the arguments.
+        for arg in arguments {
+            try arg.accept(self)
+        }
+        
+        // Emit the `call` instruction with the number of arguments as its operand.
+        emitOpcode8(opcode: .call, operand: UInt8(arguments.count))
+    }
+    
+    /// Compiles a call to a local variable.
+    ///
+    /// E.g:
+    ///
+    /// ```objo
+    /// localVariable() # <-- where this is known to be a local variable.
+    /// ```
+    private func callLocalVariable(stackSlot: Int, arguments: [Expr], location: Token) throws {
+        currentLocation = location
+        
+        if stackSlot > 255 {
+            try error(message: "The local variable slot must be <= 255.")
+        }
+        
+        if arguments.count > 255 {
+            try error(message: "A call cannot have more than 255 arguments.")
+        }
+        
+        // Tell the VM to push the local variable at `stackSlot` to the top of the stack.
+        emitOpcode8(opcode: .getLocal, operand: UInt8(stackSlot))
+        
+        // Compile the arguments.
+        for arg in arguments {
+            try arg.accept(self)
+        }
+        
+        // Emit the `call` instruction with the number of arguments as its operand.
+        emitOpcode8(opcode: .call, operand: UInt8(arguments.count))
+    }
+    
     /// For local variables, this is the point at which the compiler records their existence.
     ///
     /// - Parameters:
@@ -1019,9 +1074,78 @@ public class Compiler: ExprVisitor, StmtVisitor {
         try assignment(name: expr.name)
     }
     
+    /// Compiles a bare method invocation.
+    /// Must be either a global function call or a local method invocation on `this`
+    ///
+    /// E.g:
+    ///
+    /// ```objo
+    /// someIdentifier()
+    /// ```
     public func visitBareInvocation(expr: BareInvocationExpr) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling bare invocations is not yet implemented", location: expr.location)
+        currentLocation = expr.location
+        
+        if expr.arguments.count > 255 {
+            try error(message: "An invocation cannot have more than 255 arguments.")
+        }
+        
+        // Simplest case - are we invoking a local variable?
+        let stackSlot = try resolveLocal(name: expr.methodName)
+        if stackSlot != -1 {
+            try callLocalVariable(stackSlot: stackSlot, arguments: expr.arguments, location: expr.location)
+            return
+        }
+        
+        // Is this an instance or static method invocation called from within a class?
+        var isMethod = false
+        var isStatic = false
+        if hierarchyContains(subclass: currentClass, signature: expr.signature, isStatic: false) {
+            isMethod = true
+        } else if hierarchyContains(subclass: currentClass, signature: expr.signature, isStatic: true) {
+            isMethod = true
+            isStatic = true
+        }
+        
+        // Shall we assume this is this a call to a global function?
+        if !isMethod {
+            try callGlobalFunction(name: expr.methodName, arguments: expr.arguments, location: expr.location)
+            return
+        }
+        
+        if isStatic {
+            if self.isStaticMethod {
+                // Calling a static method from within a static method.
+                // Slot 0 of the call frame will be the **class**.
+                emitOpcode8(opcode: .getLocal, operand: 0)
+            } else {
+                // Calling a static method from within an instance method.
+                // Slot 0 of the call frame will be the *instance*. Push *its* class onto the stack.
+                emitOpcode8(opcode: .getLocalClass, operand: 0)
+            }
+        } else {
+            if self.isStaticMethod {
+                try error(message: "Cannot call an instance method from within a static method.")
+            } else {
+                // We're calling an instance method.
+                // Slot 0 of the call frame will be the *instance*. Push it onto the stack.
+                emitOpcode8(opcode: .getLocal, operand: 0)
+            }
+        }
+        
+        // The class (if this is a static method) or the instance will be on the top of the stack.
+        // Load the method's signature into the constant pool.
+        let signatureIndex = try addConstant(value: .string(expr.signature))
+        
+        // Compile the arguments.
+        for arg in expr.arguments {
+            try arg.accept(self)
+        }
+        
+        // Emit the `invoke` instruction and the index of the method's signature in the constant pool.
+        try emitVariableOpcode(shortOpcode: .invoke, longOpcode: .invokeLong, operand: signatureIndex, location: expr.location)
+        
+        // Emit the argument count.
+        emitByte(byte: UInt8(expr.arguments.count), location: expr.location)
     }
     
     public func visitBareSuperInvocation(expr: BareSuperInvocationExpr) throws {
