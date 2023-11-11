@@ -1828,9 +1828,37 @@ public class Compiler: ExprVisitor, StmtVisitor {
         emitByte(byte: UInt8(expr.indexes.count), location: expr.location)
     }
     
+    /// Compiles a subscript setter call.
+    ///
+    /// E.g: `a[1] = value`
     public func visitSubscriptSetter(expr: SubscriptSetterExpr) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling subscript setter expressions is not yet implemented", location: expr.location)
+        currentLocation = expr.location
+        
+        // Load the signature into the constants table.
+        let sigIndex = try addConstant(value: .string(expr.signature))
+        
+        // Compile the operand to put it on the stack.
+        try expr.operand.accept(self)
+        
+        // 254 not 255 because the value to assign to a setter has to be accounted for.
+        if expr.indexes.count > 254 {
+            try error(message: "The maximum number of subscript indexes is 254.")
+        }
+        
+        // Compile the arguments.
+        for i in expr.indexes {
+            try i.accept(self)
+        }
+        
+        // Compile the value to assign.
+        try expr.valueToAssign.accept(self)
+        
+        // Emit the `invoke` instruction and the index of the signature in the constants table.
+        try emitVariableOpcode(shortOpcode: .invoke, longOpcode: .invokeLong, operand: sigIndex, location: expr.location)
+        
+        // Emit the argument count.
+        // +1 because the value to assign is passed as the last argument to the setter method.
+        emitByte(byte: UInt8(expr.indexes.count + 1), location: expr.location)
     }
     
     public func visitSuperMethodInvocation(expr: SuperMethodInvocationExpr) throws {

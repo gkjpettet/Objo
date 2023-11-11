@@ -79,9 +79,6 @@ public struct Disassembler {
             
         case .superSetter:
             return superSetter(chunk: chunk, offset: &offset)
-            
-        default:
-            throw DisassemblerError.unknownOpcode(opcode: opcode, offset: offset)
         }
     }
     
