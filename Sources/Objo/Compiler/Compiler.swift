@@ -1922,9 +1922,36 @@ public class Compiler: ExprVisitor, StmtVisitor {
         emitUInt16(value: UInt16(sigIndex), location: expr.location)
     }
     
+    /// Compiles a ternary conditional expression.
     public func visitTernary(expr: TernaryExpr) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling ternary expressions is not yet implemented", location: expr.location)
+        currentLocation = expr.location
+        
+        // Compile the condition - this will leave the result on the top of the stack at runtime.
+        try expr.condition.accept(self)
+        
+        // Emit the "jump if false" instruction. We'll patch this with the proper offset to jump
+        // if condition = false after we've compiled the "then branch".
+        let thenJump = emitJump(instruction: .jumpIfFalse, location: expr.location)
+        
+        // Pop the condition if it was true before executing the "then branch".
+        emitOpcode(.pop)
+        
+        // Compile the "then branch" statement(s).
+        try expr.thenBranch.accept(self)
+        
+        // Emit the "unconditional jump" instruction. We'll patch this with the proper offset to jump
+        // if condition = true _after_ we've compiled the "else branch".
+        let elseJump = emitJump(instruction: .jump, location: expr.location)
+        
+        try patchJump(offset: thenJump)
+        
+        // Pop the condition if it was false before executing the "else branch".
+        emitOpcode(.pop)
+        
+        // Compile the "else" branch.
+        try expr.elseBranch.accept(self)
+        
+        try patchJump(offset: elseJump)
     }
     
     public func visitThis(expr: ThisExpr) throws {
