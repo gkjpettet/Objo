@@ -83,9 +83,6 @@ public class VM {
     /// A reference to the built-in List class. Will be nil whilst bootstrapping.
     private var listClass: Klass?
     
-    /// Singleton instance of `nothing`.
-    private(set) var nothing: Nothing?
-    
     /// A reference to the built-in Nothing class. Will be nil whilst bootstrapping.
     private var nothingClass: Klass?
     
@@ -135,9 +132,6 @@ public class VM {
         
         // Initialise the call frame stack.
         frames = []
-        
-        // The VM will set this once it has defined the `Nothing` class within the runtime.
-        nothing = nil
         
         /// API
         slots = Array(repeating: .nothing, count: VM.MAX_SLOTS)
@@ -234,6 +228,17 @@ public class VM {
                 
             case .constantLong:
                 push(readConstantLong())
+                
+            case.nothing:
+                // a nothing literal.
+                push(.nothing)
+                
+            case .pop:
+                stackTop -= 1
+                
+            case .popN:
+                // Pop N values off the stack. N is the single byte operand.
+                stackTop = stackTop - Int(readByte())
                 
             case .return_:
                 // Pop the return value off the stack and put it in slot 0 of the API slots array so the host application can access it.
