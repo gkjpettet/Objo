@@ -2799,9 +2799,29 @@ public class Compiler: ExprVisitor, StmtVisitor {
         emitByte(byte: stmt.isStatic ? 1 : 0)
     }
     
+    /// Compiles a return statement.
     public func visitReturn(stmt: ReturnStmt) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling return statements is not yet implemented", location: stmt.location)
+        currentLocation = stmt.location
+        
+        if self.type == .topLevel {
+            try error(message: "Cannot use the `return` keyword in top-level code.")
+        }
+        
+        // Handle the return value. If none was specified then the parser should have synthesised
+        // a `NothingLiteral` for us.
+        if self.type == .constructor {
+            // Constructors must always return `this` which will be at slot 0 in the call frame.
+            if stmt.value is NothingLiteral {
+                emitOpcode8(opcode: .getLocal, operand: 0)
+            } else {
+                try error(message: "Can't return a value from a constructor.")
+            }
+        } else {
+            // Compile the return value.
+            try stmt.value?.accept(self)
+        }
+        
+        emitOpcode(.return_, location: stmt.location)
     }
     
     public func visitSwitch(stmt: SwitchStmt) throws {
