@@ -989,6 +989,38 @@ public class Compiler: ExprVisitor, StmtVisitor {
         return nil
     }
     
+    /// Compiles the synthesised `foreach` condition: `iter* = seq*.iterate(iter*)`
+    ///
+    /// Internally called from within `visitForEachStmt()`.
+    private func forEachCondition(scriptID: Int) throws {
+        let iter = VariableExpr(identifier: syntheticIdentifier("iter*", scriptID: scriptID))
+        let seq = VariableExpr(identifier: syntheticIdentifier("seq*", scriptID: scriptID))
+       
+        let invocation = try MethodInvocationExpr(operand: seq, identifier: syntheticIdentifier("iterate", scriptID: scriptID), arguments: [iter], isSetter: false)
+        
+        let assign = AssignmentExpr(identifier: syntheticIdentifier("iter*", scriptID: scriptID), value: invocation)
+        
+        // Compile.
+        try assign.accept(self)
+    }
+    
+    /// Compiles the `foreach` loop counter assignment: `var LOOP_COUNTER = seq*.iteratorValue(iter*)`
+    ///
+    /// Internally called from within `visitForEachStmt()`.
+    private func forEachLoopCounter(loopCounter: Token) throws {
+        let scriptId = loopCounter.scriptId
+        
+        let iter = VariableExpr(identifier: syntheticIdentifier("iter*", scriptID: scriptId))
+        let seq = VariableExpr(identifier: syntheticIdentifier("seq*", scriptID: scriptId))
+        
+        let invocation = try MethodInvocationExpr(operand: seq, identifier: syntheticIdentifier("iteratorValue", scriptID: scriptId), arguments: [iter], isSetter: false)
+        
+        let dec = VarDeclStmt(identifier: syntheticIdentifier(loopCounter.lexeme!, scriptID: scriptId), initialiser: invocation, location: currentLocation!)
+        
+        // Compile.
+        try dec.accept(self)
+    }
+    
     /// Tells the VM to retrieve a global variable named `name` and push it on to the stack.
     private func getGlobalVariable(name: String) throws {
         // Get the index of the variable in the constants table (or add it and
@@ -1083,6 +1115,17 @@ public class Compiler: ExprVisitor, StmtVisitor {
         }
     }
     
+    /// A convenience method that marks the most recent local variable as initialised by setting its scope depth.
+    private func markInitialised() {
+        if scopeDepth == 0 {
+            return
+        }
+        
+        if locals.count > 0 {
+            locals[locals.count - 1].depth = scopeDepth
+        }
+    }
+    
     /// Performs a binary operation on two numeric literals, `left` and `right` and tells
     /// the VM to put the result on the stack.
     ///
@@ -1159,6 +1202,100 @@ public class Compiler: ExprVisitor, StmtVisitor {
         default:
             try error(message: "Unknown binary operator \"\(op)\".")
         }
+    }
+    
+    /// Compiles an optimised `foreach` loop where the lower (`aValue`) and upper (`bValue`) bounds
+    /// are literal integers as this is faster than the more complex iterable implementation.
+    ///
+    /// Synthesises a `for` statement depending on whether `bValue` is greater or less than `aValue`.
+    /// Before calling this function, the compiler will have converted things to an inclusive `foreach`.
+    ///
+    /// Translates:
+    ///
+    /// ```objo
+    /// foreach i in a...b {
+    ///  body
+    /// }
+    /// ```
+    ///
+    /// To:
+    ///
+    /// ```objo
+    /// for (var i = a; i <= b; i++) {
+    ///   body
+    /// }
+    /// ```
+    ///
+    /// Since number ranges allow counting backwards:
+    ///
+    /// ```objo
+    /// # b >= a (e.g: a...b). Count upwards.
+    /// for (var i = a i <= b i++) {
+    ///  body
+    /// }
+    ///
+    /// # b < a (e.g: a...b). Count backwards.
+    /// for (var i = b i >= a i--) {
+    ///  body
+    /// }
+    /// ```
+    private func optimisedForEach(aValue: Double, bValue: Double, loopCounterToken: Token, body: BlockStmt, location: Token) throws {
+        currentLocation = location
+        
+        let forKeyword = BaseToken(type: .for_, start: 0, line: 0, lexeme: nil, scriptId: location.scriptId)
+        
+        // The loop counter needs to be a variable lookup expression.
+        let loopCounter = VariableExpr(identifier: loopCounterToken)
+        
+        // Create synthetic tokens for the a and b values.
+        let aToken = NumberToken(value: aValue, isInteger: true, start: 0, line: 0, lexeme: String(aValue), scriptId: location.scriptId)
+        let bToken = NumberToken(value: bValue, isInteger: true, start: 0, line: 0, lexeme: String(bValue), scriptId: location.scriptId)
+        
+        // ==================================
+        // Initialiser (var i = a)
+        // ==================================
+        let initialiser = VarDeclStmt(identifier: loopCounterToken, initialiser: NumberLiteral(token: aToken), location: location)
+        
+        // ==================================
+        // Condition (e.g: i <= a)
+        // ==================================
+        var operator_: BaseToken
+        if aValue <= bValue {
+            // E.g: 1(a)...5(b)
+            // Count up from a to b.
+            // i <= b
+            operator_ = BaseToken(type: .lessEqual, start: 0, line: 0, lexeme: nil, scriptId: location.scriptId)
+        } else {
+            // E.g: 5(a)...1(b)
+            // count down from a to b.
+            // i >= b
+            operator_ = BaseToken(type: .greaterEqual, start: 0, line: 0, lexeme: nil, scriptId: location.scriptId)
+        }
+        
+        let b = NumberLiteral(token: bToken)
+        let condition = BinaryExpr(left: loopCounter, op: operator_, right: b)
+        
+        // ==================================
+        // Post-body expression
+        // ==================================
+        var postBodyOperator: BaseToken
+        if aValue <= bValue {
+            // E.g: 1(a)...5(b)
+            // Count up from a to b.
+            postBodyOperator = BaseToken(type: .plusPlus, start: 0, line: 0, lexeme: nil, scriptId: location.scriptId)
+        } else {
+            // E.g: 5(a)...1(b)
+            // count down from a to b.
+            postBodyOperator = BaseToken(type: .minusMinus, start: 0, line: 0, lexeme: nil, scriptId: location.scriptId)
+        }
+        
+        let postBodyExpr = PostfixExpr(operand: loopCounter, op: postBodyOperator)
+        
+        // Synthesise the `for` statement.
+        let forStmt = ForStmt(initialiser: initialiser, condition: condition, increment: postBodyExpr, body: body, forKeyword: forKeyword)
+        
+        // Compile.
+        try forStmt.accept(self)
     }
     
     /// Takes the offset in the current chunk of the start of a jump placeholder and
@@ -1308,6 +1445,11 @@ public class Compiler: ExprVisitor, StmtVisitor {
         emitUInt16(value: UInt16(superNameIndex), location: location)
         emitUInt16(value: UInt16(signatureIndex), location: location)
         emitByte(byte: UInt8(arguments.count), location: location)
+    }
+    
+    /// Returns a synthetic identifier token at line 0, position 0 with `lexeme` in `scriptID`.
+    private func syntheticIdentifier(_ lexeme: String, scriptID: Int) -> Token {
+        return BaseToken(type: .identifier, start: 0, line: 0, lexeme: lexeme, scriptId: scriptID)
     }
     
     // MARK: - `ExprVisitor` protocol methods
@@ -2434,9 +2576,102 @@ public class Compiler: ExprVisitor, StmtVisitor {
         endScope()
     }
     
+    /// Compiles a `foreach` loop.
+    ///
+    /// This ObjoScript code:
+    ///
+    /// ```
+    /// foreach i in iterable {
+    ///   print i
+    /// }
+    ///```
+    ///
+    /// Is translated to this:
+    ///
+    /// ```
+    ///  var iter* = nothing
+    ///  var seq* = iterable
+    ///  while (iter* = seq*.iterate(iter*)) {
+    ///   var i = seq*.iteratorValue(iter*)
+    ///   System.print(i)
+    ///  }
+    /// ```
+    ///
+    /// Note that `iter*` and `seq*` are invalid variable names and are internally declared by the compiler.
+    /// On each iteration, we call `iterate()` on `seq*`, passing in the current iterator value (`iter*`).
+    /// In the first iteration, we pass in `nothing`.
+    /// The job of `seq*` is to take that iterator and advance it to the next element in the sequence.
+    /// In the case where `iter* = nothing` then `seq*` should advance to the first element.
+    /// `seq*` then returns either the new iterator, or `false` to indicate that there are no more elements.
+    ///
+    /// If false is returned, the VM exits out of the loop and we’re done.
+    /// If anything else is returned, that means that we have advanced to a new valid element. To get that,
+    /// The VM then calls `iteratorValue()` on `seq*` and passes in the iterator value that it just got from calling `iterate()`.
+    /// The sequence uses that to look up and return the appropriate element.
     public func visitForEach(stmt: ForEachStmt) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling `foreach` statements is not yet implemented", location: stmt.location)
+        currentLocation = stmt.location
+        
+        let scriptId = stmt.location.scriptId
+        
+        if self.optimise {
+            // If the range expression is a numeric literal range (e.g. 1...5) then compile this as a `for` loop.
+            if stmt.range is RangeExpr {
+                let range = stmt.range as! RangeExpr
+                if range.lower is NumberLiteral && (range.lower as! NumberLiteral).isInteger && range.upper is NumberLiteral && (range.upper as! NumberLiteral).isInteger {
+                    let a = (range.lower as! NumberLiteral).value
+                    var b = (range.upper as! NumberLiteral).value
+                    if !range.isInclusive {
+                        if a < b { // E.g: 1..<5
+                            b = b - 1
+                        } else if a > b { // E.g: 5..<1
+                            b = b + 1
+                        } else { // E.g: 5..<5. This doesn't make sense.
+                            try error(message: "A numeric literal exclusive range requires that the operands have different values.")
+                        }
+                    }
+                    try optimisedForEach(aValue: a, bValue: b, loopCounterToken: stmt.loopCounter, body: stmt.body, location: stmt.location)
+                    return
+                }
+            }
+        }
+        
+        beginScope()
+        
+        // Declare `iter*` as nothing.
+        emitOpcode(.nothing)
+        try declareVariable(identifier: syntheticIdentifier("iter*", scriptID: scriptId), initialised: false, trackAsGlobal: false)
+        markInitialised()
+        
+        // Declare `seq*` equal to `stmt.Range`
+        try stmt.range.accept(self)
+        try declareVariable(identifier: syntheticIdentifier("seq*", scriptID: scriptId), initialised: false, trackAsGlobal: false)
+        markInitialised()
+        
+        startLoop()
+        
+        // Compile the condition: `iter* = seq*.iterate(iter*)`
+        try forEachCondition(scriptID: scriptId)
+        
+        try exitLoopIfFalse()
+        
+        // Bind the loop variable in its own scope. This ensures we get a fresh
+        // variable each iteration so that closures for it don't all see the same one.
+        beginScope()
+        
+        // Declare the loop counter and assign to it the value of `iter*`.
+        // `var LOOP_COUNTER = seq*.iteratorValue(iter*)`
+        try forEachLoopCounter(loopCounter: stmt.loopCounter)
+        
+        // Compile the body as defined in the source.
+        try loopBody(stmt.body)
+        
+        // Loop variable scope.
+        endScope()
+        
+        endScope()
+        
+        // Hidden variables
+        endScope()
     }
     
     public func visitForeignMethodDeclaration(stmt: ForeignMethodDeclStmt) throws {
