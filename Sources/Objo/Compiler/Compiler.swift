@@ -1954,9 +1954,17 @@ public class Compiler: ExprVisitor, StmtVisitor {
         try patchJump(offset: elseJump)
     }
     
+    /// Compiles a `this` expression.
     public func visitThis(expr: ThisExpr) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling this expressions is not yet implemented", location: expr.location)
+        currentLocation = expr.location
+        
+        if !isCompilingMethodOrConstructor {
+            try error(message: "`this` can only be used within a method or constructor.")
+        }
+        
+        // `this` is always at slot 0 of the call frame.
+        // `this` can be an instance or a class.
+        emitOpcode8(opcode: .getLocal, operand: 0)
     }
     
     /// Compiles a unary expression.
