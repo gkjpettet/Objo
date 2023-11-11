@@ -35,7 +35,7 @@ public struct Chunk {
     // MARK: - Private properties
     
     /// `true` if this chunk was compiled for debugging (reduced performance compared to production).
-    private let isDebug: Bool
+    private(set) var isDebug: Bool
     
     // MARK: - Public methods
     

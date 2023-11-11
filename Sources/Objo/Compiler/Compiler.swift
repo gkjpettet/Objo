@@ -1560,7 +1560,7 @@ public class Compiler: ExprVisitor, StmtVisitor {
         }
         
         // Create a new `if` statement from the first case that will contain the other cases.
-        var if_ = IfStmt(condition: try caseValuesToCondition(stmt.cases[0], location: stmt.location), thenBranch: stmt.cases[0].body, elseBranch: nil, ifKeyword: stmt.cases[0].location)
+        let if_ = IfStmt(condition: try caseValuesToCondition(stmt.cases[0], location: stmt.location), thenBranch: stmt.cases[0].body, elseBranch: nil, ifKeyword: stmt.cases[0].location)
         
         // Add the parent `if` to the front of the stack.
         stack.insert(if_, at: 0)
@@ -1570,14 +1570,14 @@ public class Compiler: ExprVisitor, StmtVisitor {
             var parentIf = stack[0] as! IfStmt
             
             // The adjacent value in the stack will be the next case.
-            var case_ = stack[1] as! CaseStmt
+            let case_ = stack[1] as! CaseStmt
             
             // Remove the left and right values from the stack.
             stack.remove(at: 0)
             stack.remove(at: 0)
             
             // Create an "elseif" branch from this case.
-            var elseif = IfStmt(condition: try caseValuesToCondition(case_, location: stmt.location), thenBranch: case_.body, elseBranch: nil, ifKeyword: case_.location)
+            let elseif = IfStmt(condition: try caseValuesToCondition(case_, location: stmt.location), thenBranch: case_.body, elseBranch: nil, ifKeyword: case_.location)
             
             // Set this elseif statement as the "else" branch of the preceding if statement.
             parentIf.elseBranch = elseif

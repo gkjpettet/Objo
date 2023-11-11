@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct Function: Equatable, Hashable {
+public struct Function: Method, Equatable, Hashable {
     public func hash(into hasher: inout Hasher) {
         hasher.combine(signature)
         hasher.combine(chunk.code)
