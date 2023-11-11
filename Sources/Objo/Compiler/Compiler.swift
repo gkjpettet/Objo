@@ -2765,9 +2765,38 @@ public class Compiler: ExprVisitor, StmtVisitor {
         try patchJump(offset: elseJump)
     }
     
+    /// Compiles a class method declaration.
+    ///
+    /// To define a new method, the VM needs four things:
+    ///  1. The class to bind the method to on the stack.
+    ///  2. The function that is the method body to be on the stack.
+    ///  3. The name of the method.
+    ///  4. Whether this is an instance or static method.
     public func visitMethodDeclaration(stmt: MethodDeclStmt) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling method declarations is not yet implemented", location: stmt.location)
+        currentLocation = stmt.location
+        
+        if stmt.parameters.count > 255 {
+            try error(message: "The maximum number of parameters is 255.")
+        }
+        
+        // Add the signature of the method to the function's constants pool.
+        let sigIndex = try addConstant(value: .string(stmt.signature))
+        
+        // Compile the body. We need a new compiler for this.
+        let compiler = Compiler(coreLibrarySource: "")
+        var body = try compiler.compile(name: stmt.name, parameters: stmt.parameters, body: stmt.body, type: .method, currentClass: currentClass, isStaticMethod: stmt.isStatic, debugMode: self.debugMode, shouldReset: true, enclosingCompiler: self)
+        body.isSetter = stmt.isSetter
+        
+        // Store the compiled method body as a constant in this function's constants table
+        // and push it on to the stack.
+        try emitConstant(value: .function(body))
+        
+        // Emit the "declare method" opcode.
+        // The first (two byte) operand is the index of the method's signature in the constants pool,
+        // the second operand is `1` if this is a static method or `0` if it's an instance method.
+        emitOpcode(.method)
+        emitUInt16(value: UInt16(sigIndex))
+        emitByte(byte: stmt.isStatic ? 1 : 0)
     }
     
     public func visitReturn(stmt: ReturnStmt) throws {

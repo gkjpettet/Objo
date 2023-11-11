@@ -68,7 +68,7 @@ public struct Function: Equatable, Hashable {
     public var chunk: Chunk
     
     /// If `true` then this is a setter method.
-    public let isSetter: Bool
+    public var isSetter: Bool
     
     /// This function's name.
     public let name: String
