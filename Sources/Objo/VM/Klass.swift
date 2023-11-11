@@ -48,12 +48,8 @@ public class Klass: MethodReceiver, Equatable, Hashable {
     /// This class's optional superclass.
     public var superclass: Klass? = nil
     
-    /// A reference to the VM this class is contained within.
-    public let vm: VM
-    
     // MARK: - Public methods
-    public init(vm: VM, name: String, isForeign: Bool, fieldCount: Int, firstFieldIndex: Int) {
-        self.vm = vm
+    public init(name: String, isForeign: Bool, fieldCount: Int, firstFieldIndex: Int) {
         self.name = name
         self.isForeign = isForeign
         self.fieldCount = fieldCount

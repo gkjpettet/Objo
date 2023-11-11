@@ -21,6 +21,11 @@ public class VM {
     
     // MARK: - Event handlers
     
+    /// The function that is called when defining a foreign class. The host should return the callback to use when a new class
+    /// is instantiated.
+    /// name of the class -> (VM, the instance being instantiated as a Value, the arguments to the constructor)
+    public var bindForeignClass: ((String) -> (VM, inout Value, [Value]) -> Void)?
+    
     /// The function that is called when the VM has finished execution.
     public var finished: (() -> Void)?
     
@@ -223,6 +228,60 @@ public class VM {
                     try invokeBinary(signature: "&(_)")
                 }
                 
+            case .bitwiseNot:
+                switch stack[stackTop - 1] {
+                case .number(let d):
+                    // Do the "bitwise not" operation in place for speed.
+                    stack[stackTop - 1] = .number(Double(~Int(d)))
+                default:
+                    try invokeUnary(signature: "~()")
+                }
+                
+            case .bitwiseOr:
+                if let (a, b) = stackTopAreNumbers() {
+                    // Pop the stack and replace the top with the answer.
+                    stack[stackTop - 2] = .number(Double(Int(a) | Int(b)))
+                    stackTop -= 1
+                } else {
+                    try invokeBinary(signature: "|(_)")
+                }
+                
+            case .bitwiseXor:
+                if let (a, b) = stackTopAreNumbers() {
+                    // Pop the stack and replace the top with the answer.
+                    stack[stackTop - 2] = .number(Double(Int(a) ^ Int(b)))
+                    stackTop -= 1
+                } else {
+                    try invokeBinary(signature: "^(_)")
+                }
+                
+            case .breakpoint:
+                // Allows the VM to pause at a manually set break point.
+                // Has no effect in production chunks or if the VM is not in debug mode.
+                if debugMode && currentChunk.isDebug {
+                    lastStoppedLine = currentChunk.lineForOffset(currentFrame.ip - 1)
+                    lastStoppedScriptId = currentChunk.scriptIDForOffset(currentFrame.ip - 1)
+                    lastInstructionFrame = currentFrame
+                    _isRunning = false
+                    willStop?(lastStoppedScriptId, lastStoppedLine)
+                    return
+                }
+                
+            case .call:
+                let argcount = Int(readByte())
+                // Peek past the arguments to find the function to call.
+                try callValue(peek(argcount)!, argCount: argcount)
+                
+            case .class_:
+                let className = readConstantLong().description
+                let isForeign = readByte() == 1
+                let fieldCount = Int(readByte())
+                let firstFieldIndex = Int(readByte())
+                push(.klass(try newClass(name: className, isForeign: isForeign, fieldCount: fieldCount, firstFieldIndex: firstFieldIndex)))
+                if isForeign {
+                    try defineForeignClass()
+                }
+                
             case.constant:
                 push(readConstant())
                 
@@ -384,6 +443,54 @@ public class VM {
         }
     }
     
+    /// Defines a foreign class. Assumes the class is already on the top of the stack.
+    private func defineForeignClass() throws {
+        let klass: Klass
+        switch peek(0) {
+        case .klass(let k):
+            klass = k
+        default:
+            throw error(message: "Expected a class on the top of the stack but got `\(String(describing: peek(0)))`.")
+        }
+        
+        // Ask the host application for the instantiation callback to use.
+        klass.foreignInstantiate = bindForeignClass?(klass.name)
+        
+        if klass.foreignInstantiate == nil {
+            // The host isn't aware of this class. Check if the core libraries have a callback for it.
+            klass.foreignInstantiate = bindForeignClass?(klass.name)
+            if klass.foreignInstantiate == nil {
+                throw error(message: "There is no foreign class instantiation callback for `\(klass.name)`.")
+            }
+        }
+        
+        // If this is one of Objo's built-in types we keep a reference to the class for use elsewhere.
+        // This saves us having to look them up.
+        // All the built-in types are foreign classes.
+        switch klass.name {
+        case "Boolean":
+            booleanClass = klass
+            
+        case "KeyValue":
+            keyValueClass = klass
+            
+        case "List":
+            listClass = klass
+            
+        case "Nothing":
+            nothingClass = klass
+            
+        case "Number":
+            numberClass = klass
+            
+        case "String":
+            stringClass = klass
+            
+        default:
+            break
+        }
+    }
+    
     /// Returns a VMError at the current IP (unless otherwise specified).
     private func error(message: String, offset: Int? = nil) -> VMError {
         let ip = offset ?? currentFrame.ip
@@ -459,6 +566,33 @@ public class VM {
         try callValue(method!, argCount: argCount)
     }
     
+    /// Invokes a unary operator overloaded method with `signature` on the
+    /// instance/class on the top of the stack.
+    ///
+    /// Raises a VM runtime error if the instance/class doesn't implement the overloaded operator.
+    /// value   <---- top of the stack
+    private func invokeUnary(signature: String) throws {
+        switch peek(0) {
+        case .number:
+            try invokeFromClass(klass: numberClass!, signature: signature, argCount: 0, isStatic: false)
+            
+        case .string:
+            try invokeFromClass(klass: stringClass!, signature: signature, argCount: 0, isStatic: false)
+            
+        case .boolean:
+            try invokeFromClass(klass: booleanClass!, signature: signature, argCount: 0, isStatic: false)
+            
+        case .instance(let i):
+            try invokeFromClass(klass: i.klass, signature: signature, argCount: 0, isStatic: false)
+            
+        case .klass(let k):
+            try invokeFromClass(klass: k, signature: signature, argCount: 0, isStatic: true)
+            
+        default:
+            throw error(message: "\(String(describing: peek(0))) does not implement `\(signature)`.")
+        }
+    }
+    
     /// Returns true if `v` is considered "falsey".
     ///
     /// Objo considers the boolean value `false` and the Objo value `nothing` to
@@ -488,6 +622,27 @@ public class VM {
         default:
             return false
         }
+    }
+    
+    /// Creates and returns a new class.
+    private func newClass(name: String, isForeign: Bool, fieldCount: Int, firstFieldIndex: Int) throws -> Klass {
+        let klass = Klass(name: name, isForeign: isForeign, fieldCount: fieldCount, firstFieldIndex: firstFieldIndex)
+        
+        // All classes (except `Object`, obviously) inherit Object's static methods.
+        if klass.name != "Object" {
+            guard let objectValue = globals["Object"] else {
+                throw error(message: "Cannot create a new class because the global `Object` has not been defined.")
+            }
+            
+            switch objectValue {
+            case .klass(let object):
+                klass.staticMethods = object.staticMethods
+            default:
+                throw error(message: "There is a global variable named `Object` but it is not a class.")
+            }
+        }
+        
+        return klass
     }
     
     /// Returns the value `distance` from the top of the stack.
