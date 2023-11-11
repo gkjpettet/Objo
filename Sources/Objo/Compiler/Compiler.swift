@@ -894,6 +894,24 @@ public class Compiler: ExprVisitor, StmtVisitor {
         throw CompilerError(message: message, location: location ?? currentLocation)
     }
     
+    /// Emits the `jumpIfFalse` instruction and a `pop` instruction.
+    /// Used to test the loop condition and
+    /// potentially exit the loop. Keeps track of the instruction so we can patch it
+    /// later once we know where the end of the body is.
+    ///
+    /// Will throw if there is no loop currently being compiled.
+    private func exitLoopIfFalse() throws {
+        guard let loop = currentLoop else {
+            try error(message: "Not currently compiling a loop.")
+            return
+        }
+        
+        loop.exitJump = emitJump(instruction: .jumpIfFalse)
+        
+        // Pop the condition before executing the body.
+        emitOpcode(.pop)
+    }
+    
     /// Emits the `jumpIfTrue` instruction and a `pop` instruction to test the loop condition and
     /// potentially exit the loop. Keeps track of the instruction so we can patch it
     /// later once we know where the end of the body is.
@@ -2373,9 +2391,47 @@ public class Compiler: ExprVisitor, StmtVisitor {
         emitOpcode(.pop)
     }
     
+    /// Compiles a `for` loop.
+    ///
+    /// ```objo
+    /// for (initialiser? ; condition? ; increment?) {
+    ///  statements
+    /// }
+    /// ```
     public func visitFor(stmt: ForStmt) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling `for` statements is not yet implemented", location: stmt.location)
+        beginScope()
+        
+        currentLocation = stmt.location
+        
+        // Optional initialiser.
+        try stmt.initialiser?.accept(self)
+        
+        startLoop()
+        
+        // Optional condition.
+        if stmt.condition != nil {
+            try stmt.condition!.accept(self)
+        } else {
+            // No condition provided. Set it to true (infinite loop).
+            emitOpcode(.true_)
+        }
+        
+        // Emit code to exit the loop if the condition is falsey.
+        try exitLoopIfFalse()
+        
+        // Compile the loop's body.
+        try loopBody(stmt.body)
+        
+        // Compile the optional increment expression. It gets inserted after the body of the loop.
+        if stmt.increment != nil {
+            try stmt.increment!.accept(self)
+            // Pop the increment expression result off the stack.
+            emitOpcode(.pop, location: stmt.increment!.location)
+        }
+        
+        try endLoop()
+        
+        endScope()
     }
     
     public func visitForEach(stmt: ForEachStmt) throws {
