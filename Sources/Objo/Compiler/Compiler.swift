@@ -2011,9 +2011,68 @@ public class Compiler: ExprVisitor, StmtVisitor {
         }
     }
     
+    /// Compiles retrieving a named variable or an invocation to a method with no arguments.
     public func visitVariable(expr: VariableExpr) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling variable access is not yet implemented", location: expr.location)
+        // Is this a local variable retrieval?
+        let slot = try resolveLocal(name: expr.name)
+        if slot != -1 {
+            // Yes it is.
+            emitOpcode8(opcode: .getLocal, operand: UInt8(slot))
+            return
+        }
+        
+        // This might be a getter call so compute its signature now.
+        let signature = try Objo.computeSignature(name: expr.name, arity: 0, isSetter: false)
+        var isGetter = false
+        
+        if isCompilingMethodOrConstructor {
+            let hasInstance = hierarchyContains(subclass: currentClass, signature: signature, isStatic: false)
+            let hasStatic = hierarchyContains(subclass: currentClass, signature: signature, isStatic: true)
+            
+            if self.isStaticMethod {
+                // Within a static method, we can only call other static methods on this class.
+                if hasInstance && !hasStatic {
+                    try error(message: "Cannot call an instance method from within a static method.")
+                } else if hasStatic {
+                    // We're calling a static method from within a static method. Therefore, slot 0 of the call frame
+                    // will be the class. Push it onto the stack.
+                    emitOpcode8(opcode: .getLocal, operand: 0)
+                    isGetter = true
+                } else {
+                    // Not a local variable or a static getter method - assume we're retrieving a global variable.
+                    try getGlobalVariable(name: expr.name)
+                }
+            } else {
+                // Within an instance method, we can call instance or static methods.
+                if hasInstance {
+                    // Slot 0 of the call frame will be the instance. Push it onto the stack.
+                    emitOpcode8(opcode: .getLocal, operand: 0)
+                    isGetter = true
+                } else if hasStatic {
+                    // We're calling a static method from within an instance method. Therefore, slot 0 of the
+                    // call frame will be the instance. Push its class onto the stack.
+                    emitOpcode8(opcode: .getLocalClass, operand: 0)
+                    isGetter = true
+                } else {
+                    // Not a local variable or a getter method - assume we're retrieving a global variable.
+                    try getGlobalVariable(name: expr.name)
+                }
+            }
+        } else {
+            // Not a local variable or a getter method - assume we're retrieving a global variable.
+            try getGlobalVariable(name: expr.name)
+        }
+        
+        if isGetter {
+            // Load the getter's signature into the constants table.
+            let index = try addConstant(value: .string(signature))
+            
+            // Emit the `invoke` instruction and the index of the getter's signature in the constants table.
+            try emitVariableOpcode(shortOpcode: .invoke, longOpcode: .invokeLong, operand: index)
+            
+            // Emit the argument count (always 0 for setters).
+            emitByte(byte: 0)
+        }
     }
     
     // MARK: - `StmtVisitor` protocol methods
