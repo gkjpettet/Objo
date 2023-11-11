@@ -2697,9 +2697,38 @@ public class Compiler: ExprVisitor, StmtVisitor {
         emitByte(byte: stmt.isStatic ? 1 : 0)
     }
     
+    /// Compiles a function declaration.
     public func visitFuncDeclaration(stmt: FunctionDeclStmt) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling function declarations is not yet implemented", location: stmt.location)
+        currentLocation = stmt.location
+        
+        // Since we don't support closures, we only allow functions to be declared
+        // at the top level of a script (i.e. not within other functions, methods, class declarations, etc).
+        if self.type != .topLevel {
+            try error(message: "Functions can only be declared within the top level of a script.")
+        }
+        
+        // We also don't allow functions to be declared within loops.
+        if currentLoop != nil {
+            try error(message: "Cannot declare functions within a loop.")
+        }
+        
+        try declareVariable(identifier: stmt.name, initialised: true, trackAsGlobal: true)
+        
+        // Compile the function body. We use a new compiler for this.
+        let compiler = Compiler(coreLibrarySource: "")
+        let f = try compiler.compile(name: stmt.name.lexeme!, parameters: stmt.parameters, body: stmt.body, type: .function, currentClass: currentClass, isStaticMethod: false, debugMode: self.debugMode, shouldReset: true, enclosingCompiler: self)
+        
+        // Store the compiled function as a constant in this function's constants table and push it
+        // on to the stack.
+        try emitConstant(value: .function(f))
+        
+        var index = 0
+        if scopeDepth == 0 {
+            // Global function. Add the name of the function to the function's constants pool.
+            index = try addConstant(value: .string(stmt.name.lexeme!))
+        }
+        
+        try defineVariable(index: index)
     }
     
     public func visitIf(stmt: IfStmt) throws {
