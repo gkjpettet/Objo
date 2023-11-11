@@ -2674,9 +2674,27 @@ public class Compiler: ExprVisitor, StmtVisitor {
         endScope()
     }
     
+    /// Compiles a foreign method declaration.
+    ///
+    /// To define a new foreign method, the VM needs three things:
+    ///  1. The name of the method.
+    ///  2. The arity of the method.
+    ///  3. Whether or not this is an instance or static method.
+    /// At runtime, the class to bind to should be on the top of the s
     public func visitForeignMethodDeclaration(stmt: ForeignMethodDeclStmt) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling foreign method declarations is not yet implemented", location: stmt.location)
+        currentLocation = stmt.location
+        
+        // Add the signature of the method to the function's constants table.
+        let sigIndex = try addConstant(value: .string(stmt.signature))
+        
+        // Emit the "declare foreign method" opcode.
+        // The operands are the index of the method's signature in the constants table,
+        // the number of arguments the method expects,
+        // and if it's an instance (0) or static (1) method.
+        emitOpcode(.foreignMethod)
+        emitUInt16(value: UInt16(sigIndex))
+        emitByte(byte: UInt8(stmt.arity))
+        emitByte(byte: stmt.isStatic ? 1 : 0)
     }
     
     public func visitFuncDeclaration(stmt: FunctionDeclStmt) throws {

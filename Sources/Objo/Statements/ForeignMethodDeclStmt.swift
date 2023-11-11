@@ -8,18 +8,27 @@
 import Foundation
 
 public struct ForeignMethodDeclStmt: Stmt {
+    /// The number of arguments this foreign method expects.
+    public var arity: Int { return parameters.count }
+    
     /// The name of the class this foreign method belongs to.
     public let className: String
+    
     /// The identifier token for this foreign method.
     public var location: Token
+    
     /// Whether this foreign method is a setter or a regular method.
     public let isSetter: Bool
+    
     /// 'true' if this is a static foreign method declaration.
     public let isStatic: Bool
+    
     /// This foreign method's name.
     public let name: String
+    
     /// This foreign method's parameter identifier tokens.
     public let parameters: [Token]
+    
     /// This foreign method's signature.
     public let signature: String
     
