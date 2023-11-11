@@ -715,7 +715,7 @@ public class Compiler: ExprVisitor, StmtVisitor {
     /// Returns the offset of the jump instruction.
     ///
     /// We can jump a maximum of &hFFFF (65535) bytes.
-    private func emitJump(instruction: Opcode, location: Token? = nil) -> Int {
+    @discardableResult private func emitJump(instruction: Opcode, location: Token? = nil) -> Int {
         let loc = location ?? currentLocation!
         
         emitOpcode(instruction, location: loc)
@@ -2344,9 +2344,22 @@ public class Compiler: ExprVisitor, StmtVisitor {
         // The compiler doesn't visit this as switch statements are compiled into chained `if` statements.
     }
     
+    /// Compiles an `exit` statement.
     public func visitExit(stmt: ExitStmt) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling exit statements is not yet implemented", location: stmt.location)
+        currentLocation = stmt.location
+        
+        if currentLoop == nil {
+            try error(message: "Cannot use the `exit` keyword outside of a loop.")
+        }
+        
+        // Since we'll be jumping out of the scope, make sure any locals in it are discarded first.
+        try discardLocals(depth: currentLoop!.scopeDepth + 1)
+        
+        // Emit a placeholder instruction for the jump to the end of the body. When
+        // we're done compiling the loop body and know where the end is, we'll
+        // replace these with a jump instruction with the appropriate offset.
+        // We use the `exit` opcode as the placeholder.
+        emitJump(instruction: .exit)
     }
     
     /// Compiles an expression statement.
