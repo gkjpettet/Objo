@@ -543,6 +543,65 @@ public class Compiler: ExprVisitor, StmtVisitor {
         emitOpcode8(opcode: .call, operand: UInt8(arguments.count))
     }
     
+    /// Internal use. Concatenates a case statement's values using the logical `or`
+    /// operator into a single condition that can be used in an `if` statement.
+    ///
+    /// E.g:
+    ///
+    /// ```objo
+    /// case 10, 20, true, "a"
+    /// ```
+    ///
+    /// becomes:
+    ///
+    /// ```objo
+    /// consider* == 10 or consider* == 20 or consider* == true or consider* == "a"
+    /// ```
+    private func caseValuesToCondition(_ case_: CaseStmt, location: Token) throws -> Expr {
+        let scriptId = location.scriptId
+        
+        if case_.values.count == 0 {
+            try error(message: "Did not expect an empty `CaseStmt.values()` array.")
+        }
+        
+        // Create a statement to produce the value of the hidden `consider*` variable.
+        let consider = VariableExpr(identifier: syntheticIdentifier("consider*", scriptID: scriptId))
+        
+        // Create a synthetic `or` token.
+        let orToken = BaseToken(type: .or, start: case_.location.start, line: case_.location.line, lexeme: "or", scriptId: scriptId)
+        
+        // Create a synthetic `==` token for the comparison of the case value to `consider*`.
+        let equalToken = BaseToken(type: .equalEqual, start: case_.location.start, line: case_.location.line, lexeme: "==", scriptId: scriptId)
+        
+        // Quick exit? If there's only one value then it just needs to be compared to `consider*`.
+        if case_.values.count == 1 {
+            return BinaryExpr(left: consider, op: equalToken, right: case_.values[0])
+        }
+        
+        // Clone the values.
+        var stack: [Expr] = case_.values
+        
+        // Iterate the stack to create a logical or expression.
+        while stack.count > 1 {
+            var left = stack[0]
+            var right = stack[1]
+            
+            // The expressions need to be equality checks against `consider*`.
+            left = BinaryExpr(left: consider, op: equalToken, right: left)
+            right = BinaryExpr(left: consider, op: equalToken, right: right)
+            
+            // Remove the left and right expressions from the stack.
+            stack.remove(at: 0)
+            stack.remove(at: 0)
+            
+            // Push the logical or expression to the front of the stack.
+            stack.insert(LogicalExpr(left: left, op: orToken, right: right), at: 0)
+        }
+        
+        // stack[0] should now be the logical or expression we need.
+        return stack[0]
+    }
+    
     /// Compiles a `++` or `--` postfix expression.
     /// Assumes `expr` is a `++` or `--` expression.
     private func compilePostfix(expr: PostfixExpr) throws {
@@ -1445,6 +1504,111 @@ public class Compiler: ExprVisitor, StmtVisitor {
         emitUInt16(value: UInt16(superNameIndex), location: location)
         emitUInt16(value: UInt16(signatureIndex), location: location)
         emitByte(byte: UInt8(arguments.count), location: location)
+    }
+    
+    /// De-sugars a `switch` statement to a chained `if` statement enclosed within a block.
+    ///
+    /// We de-sugar the switch statement to a series of `if` statements.
+    /// We only evaluate the `consider` expression once and make it available as a
+    /// secret local variable (`consider*`).
+    ///
+    /// ```objo
+    /// switch consider {
+    ///  case a, b {
+    ///   // First case.
+    ///  }
+    ///  case is < 10 {
+    ///   // Second case.
+    ///  }
+    ///  else {
+    ///   // Default case.
+    ///  }
+    /// }
+    /// ```
+    ///
+    /// becomes:
+    ///
+    /// ```objo
+    /// {
+    ///  var consider* = consider
+    ///  if (a == consider*) or (b == consider*) {
+    ///    // First case.
+    ///  } else if consider* < 10 {
+    ///    // Second case.
+    ///  } else {
+    //     // Default case.
+    ///  }
+    /// }
+    /// ```
+    ///
+    /// Assumes the switch statement contains at least one case.
+    private func switchToIfBlock(stmt: SwitchStmt) throws -> BlockStmt {
+        let scriptId = stmt.location.scriptId
+        
+        // Create an array to hold the statements of the block we will return.
+        var statements: [Stmt] = []
+        
+        // First we need to declare a variable named `consider*` and assign to it the switch statement's
+        // `consider` expression.
+        let consider = VarDeclStmt(identifier: syntheticIdentifier("consider*", scriptID: scriptId), initialiser: stmt.consider, location: stmt.location)
+        statements.append(consider)
+        
+        // We'll use a stack to avoid recursion.
+        var stack: [Stmt] = []
+        for c in stmt.cases {
+            stack.append(c)
+        }
+        
+        // Create a new `if` statement from the first case that will contain the other cases.
+        var if_ = IfStmt(condition: try caseValuesToCondition(stmt.cases[0], location: stmt.location), thenBranch: stmt.cases[0].body, elseBranch: nil, ifKeyword: stmt.cases[0].location)
+        
+        // Add the parent `if` to the front of the stack.
+        stack.insert(if_, at: 0)
+        
+        while stack.count > 1 {
+            // The front of the stack is always the `if` statement we're going to return.
+            var parentIf = stack[0] as! IfStmt
+            
+            // The adjacent value in the stack will be the next case.
+            var case_ = stack[1] as! CaseStmt
+            
+            // Remove the left and right values from the stack.
+            stack.remove(at: 0)
+            stack.remove(at: 0)
+            
+            // Create an "elseif" branch from this case.
+            var elseif = IfStmt(condition: try caseValuesToCondition(case_, location: stmt.location), thenBranch: case_.body, elseBranch: nil, ifKeyword: case_.location)
+            
+            // Set this elseif statement as the "else" branch of the preceding if statement.
+            parentIf.elseBranch = elseif
+            
+            // Add the parent `if` to the front of the stack.
+            stack.insert(parentIf, at: 0)
+        }
+        
+        // Optional final switch "else" case.
+        if stmt.elseCase != nil {
+            // The Swift compiler is very picky here...
+            
+            // Get the front of the stack as an IfStmt.
+            var front: IfStmt = (stack[0] as! IfStmt)
+            
+            // Now get the front if statement's else branch as an if statement.
+            var frontElse: IfStmt = (front.elseBranch as! IfStmt)
+            
+            // Wire things up...
+            frontElse.elseBranch = stmt.elseCase!.body
+            front.elseBranch = frontElse
+            stack[0] = front
+        }
+        
+        // stack[0] should be the `if` statement we need.
+        statements.append(stack[0])
+        
+        // Wrap these statements in a synthetic block and return.
+        let openingBrace = BaseToken(type: .lcurly, start: 0, line: 0, lexeme: nil, scriptId: scriptId)
+        let closingBrace = BaseToken(type: .rcurly, start: 0, line: 0, lexeme: nil, scriptId: scriptId)
+        return BlockStmt(statements: statements, openingBrace: openingBrace, closingBrace: closingBrace)
     }
     
     /// Returns a synthetic identifier token at line 0, position 0 with `lexeme` in `scriptID`.
@@ -2824,9 +2988,19 @@ public class Compiler: ExprVisitor, StmtVisitor {
         emitOpcode(.return_, location: stmt.location)
     }
     
+    /// Compiles a `switch` statement.
     public func visitSwitch(stmt: SwitchStmt) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling switch statements is not yet implemented", location: stmt.location)
+        currentLocation = stmt.location
+        
+        if stmt.cases.count == 0 {
+            try error(message: "A switch statement must include at least one case.")
+        }
+        
+        // Convert this switch statement to an `if...else` statement contained within a block.
+        let block = try switchToIfBlock(stmt: stmt)
+        
+        // Compile the newly created `if` statement.
+        try block.accept(self)
     }
     
     public func visitVarDeclaration(stmt: VarDeclStmt) throws {

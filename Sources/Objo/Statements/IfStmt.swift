@@ -11,7 +11,7 @@ public struct IfStmt: Stmt {
     /// The `if` condition to evaluate.
     public let condition: Expr
     /// Optional `else` branch statement.
-    public let elseBranch: Stmt?
+    public var elseBranch: Stmt?
     /// The location of the `if` keyword.
     public var location: Token
     /// The statement(s) to execute if `condition` evaluates to `true` at runtime.
