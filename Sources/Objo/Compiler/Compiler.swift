@@ -1861,9 +1861,11 @@ public class Compiler: ExprVisitor, StmtVisitor {
         emitByte(byte: UInt8(expr.indexes.count + 1), location: expr.location)
     }
     
+    /// Compiles a method invocation on `super`.
+    ///
+    /// E.g: `super.method(arg1, arg2)`
     public func visitSuperMethodInvocation(expr: SuperMethodInvocationExpr) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling super method invocations is not yet implemented", location: expr.location)
+        try superMethodInvocation(signature: expr.signature, arguments: expr.arguments, location: expr.location)
     }
     
     public func visitSuperSetter(expr: SuperSetterExpr) throws {
