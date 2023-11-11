@@ -2731,9 +2731,38 @@ public class Compiler: ExprVisitor, StmtVisitor {
         try defineVariable(index: index)
     }
     
+    /// Compiles an `if` statement.
     public func visitIf(stmt: IfStmt) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling `if` statements is not yet implemented", location: stmt.location)
+        currentLocation = stmt.location
+        
+        // Compile the condition - this will leave the result on the top of the stack at runtime.
+        try stmt.condition.accept(self)
+        
+        // Emit the "jump if false" instruction. We'll patch this with the proper offset to jump
+        // if condition = false after we've compiled the "then branch".
+        let thenJump = emitJump(instruction: .jumpIfFalse, location: stmt.location)
+        
+        // When the condition is truthy we pop the value off the top of the stack before the
+        // code inside the "then branch".
+        emitOpcode(.pop)
+        
+        // Compile the "then branch" statement(s).
+        try stmt.thenBranch.accept(self)
+        
+        // Emit the "unconditional jump" instruction. We'll patch this with the proper offset to jump
+        // if condition = true after we've compiled the "else branch".
+        let elseJump = emitJump(instruction: .jump, location: stmt.location)
+        
+        try patchJump(offset: thenJump)
+        
+        // When the condition is falsey we pop the value off the top of the stack before the
+        // code inside the "else branch".
+        emitOpcode(.pop)
+        
+        // Compile the optional "else" branch statement.
+        try stmt.elseBranch?.accept(self)
+        
+        try patchJump(offset: elseJump)
     }
     
     public func visitMethodDeclaration(stmt: MethodDeclStmt) throws {
