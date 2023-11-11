@@ -3003,9 +3003,40 @@ public class Compiler: ExprVisitor, StmtVisitor {
         try block.accept(self)
     }
     
+    /// Compiles a variable declaration.
     public func visitVarDeclaration(stmt: VarDeclStmt) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling variable declarations is not yet implemented", location: stmt.location)
+        currentLocation = stmt.location
+        
+        // Compile the initialiser.
+        try stmt.initialiser.accept(self)
+        
+        try declareVariable(identifier: stmt.identifier, initialised: false, trackAsGlobal: scopeDepth == 0)
+        
+        var varNameIndex = -1 // -1 is a deliberate invalid index.
+        if scopeDepth == 0 {
+            // Global variable declaration. Add the name of the variable to the constant pool and get its index.
+            varNameIndex = try addConstant(value: .string(stmt.name))
+        }
+        
+        try defineVariable(index: varNameIndex)
+        
+        // =====================================
+        // DEBUGGER
+        // =====================================
+        // Support for named local variables.
+        if self.debugMode && scopeDepth > 0 {
+            // This is a local variable declaration. Tell the VM to record the name and location of
+            // the variable for debugging.
+            emitOpcode(.localVarDeclaration, location: stmt.location)
+            varNameIndex = try addConstant(value: .string(stmt.name))
+            emitUInt16(value: UInt16(varNameIndex))
+            
+            let localSlot = try resolveLocal(name: stmt.name)
+            if localSlot < 0 || localSlot > 255 {
+                try error(message: "Invalid local variable stack slot.")
+            }
+            emitByte(byte: UInt8(localSlot))
+        }
     }
     
     public func visitWhile(stmt: WhileStmt) throws {
