@@ -3039,8 +3039,19 @@ public class Compiler: ExprVisitor, StmtVisitor {
         }
     }
     
+    /// Compiles a `while` loop.
     public func visitWhile(stmt: WhileStmt) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling while statements is not yet implemented", location: stmt.location)
+        currentLocation = stmt.location
+        
+        startLoop()
+        
+        // Compile the condition.
+        try stmt.condition.accept(self)
+        
+        try exitLoopIfFalse()
+        
+        try loopBody(stmt.body)
+        
+        try endLoop()
     }
 }
