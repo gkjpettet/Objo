@@ -1868,9 +1868,58 @@ public class Compiler: ExprVisitor, StmtVisitor {
         try superMethodInvocation(signature: expr.signature, arguments: expr.arguments, location: expr.location)
     }
     
+    /// Compiles a `super` setter expression.
+    ///
+    /// The runtime needs three things to execute a `super` setter expression.
+    ///  1. The superclass name.
+    ///  2. The signature of the setter
+    ///  3. The value to assign.
     public func visitSuperSetter(expr: SuperSetterExpr) throws {
-        // TODO: Implement.
-        throw CompilerError(message: "Compiling super setter expressions is not yet implemented", location: expr.location)
+        currentLocation = expr.location
+        
+        if !isCompilingMethodOrConstructor {
+            try error(message: "`super` can only be used within a method or constructor.")
+        }
+        
+        // Check this class actually has a superclass.
+        if currentClass!.superclass == nil {
+            try error(message: "Class `\(currentClass!.name)` does not have a superclass.")
+        }
+        
+        // Check the superclass has a matching setter.
+        var superHasMatchingSetter = false
+        for (_, method) in currentClass!.superclass!.declaration.methods {
+            if !method.isSetter {
+                continue
+            }
+            
+            if method.signature == expr.signature {
+                superHasMatchingSetter = true
+                break
+            }
+        }
+        
+        if !superHasMatchingSetter {
+            try error(message: "The superclass (`\(currentClass!.superclass!.name)`) of `\(currentClass!.name)` does not define a setter `\(expr.signature)`.")
+        }
+        
+        // Load the superclass's name into the constants table.
+        let superNameIndex = try addConstant(value: .string(currentClass!.superclass!.name))
+        
+        // Push `this` onto the stack. It's always at slot 0 of the call frame.
+        emitOpcode8(opcode: .getLocal, operand: 0)
+        
+        // Load the setter's signature into the constants table.
+        let sigIndex = try addConstant(value: .string(expr.signature))
+        
+        // Compile the value to assign.
+        try expr.valueToAssign.accept(self)
+        
+        // Emit the `superSetter` instruction, the superclass name index and the index of the
+        // method's signature in the constants table.
+        emitOpcode(.superSetter, location: expr.location)
+        emitUInt16(value: UInt16(superNameIndex), location: expr.location)
+        emitUInt16(value: UInt16(sigIndex), location: expr.location)
     }
     
     public func visitTernary(expr: TernaryExpr) throws {
