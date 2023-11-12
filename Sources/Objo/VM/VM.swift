@@ -369,6 +369,144 @@ public class VM {
                 }
                 try getGlobal(name: name)
                 
+            case .getLocal:
+                // The operand is the stack slot where the local variable lives.
+                // Load the value at that slot and then push it on to the top of the stack.
+                push(stack[currentFrame.stackBase + Int(readByte())]!)
+                
+            case .getLocalClass:
+                // The operand is the stack slot where the local variable lives (should be an instance).
+                // Load it and then push its class onto the stack.
+                guard case .instance(let instance) = stack[currentFrame.stackBase + Int(readByte())] else {
+                    throw error(message: "Expected an instance.")
+                }
+                push(.klass(instance.klass))
+                
+            case .getStaticField:
+                guard case .string(let name) = readConstant() else {
+                    throw error(message: "Expected an index to a static field name on the top of the stack.")
+                }
+                try getStaticField(name: name)
+                
+            case .getStaticFieldLong:
+                guard case .string(let name) = readConstantLong() else {
+                    throw error(message: "Expected an index to a static field name on the top of the stack.")
+                }
+                try getStaticField(name: name)
+                
+            case .greater:
+                if let (a, b) = stackTopAreNumbers() {
+                    stack[stackTop - 2] = .boolean(a > b)
+                    stackTop -= 1
+                } else {
+                    try invokeBinary(signature: ">(_)")
+                }
+                
+            case .greaterEqual:
+                if let (a, b) = stackTopAreNumbers() {
+                    stack[stackTop - 2] = .boolean(a >= b)
+                    stackTop -= 1
+                } else {
+                    try invokeBinary(signature: ">=(_)")
+                }
+                
+            case .inherit:
+                try inherit()
+                
+            case .invoke:
+                guard case .string(let signature) = readConstant() else {
+                    throw error(message: "Expected an index to a signature on the top of the stack.")
+                }
+                try invoke(signature: signature, argCount: Int(readByte()))
+                
+            case .invokeLong:
+                guard case .string(let signature) = readConstantLong() else {
+                    throw error(message: "Expected an index to a signature on the top of the stack.")
+                }
+                try invoke(signature: signature, argCount: Int(readByte()))
+                
+            case .is_:
+                try invokeBinary(signature: "is(_)")
+                
+            case .jump:
+                // Unconditionally jump the specified offset from the current instruction pointer.
+                // +2 accounts for the 2 bytes we read.
+                currentFrame.ip += readUInt16() + 2
+                
+            case .jumpIfFalse:
+                // Jump `offset` bytes from the current instruction pointer _if_ the value on the top of the stack is falsey.
+                let offset = readUInt16()
+                if isFalsey(peek(0)!) {
+                    currentFrame.ip += offset
+                }
+                
+            case .jumpIfTrue:
+                // Jump `offset` bytes from the current instruction pointer _if_ the value on the top of the stack is truthy.
+                let offset = readUInt16()
+                if isTruthy(peek(0)!) {
+                    currentFrame.ip += offset
+                }
+                
+            case .keyValue:
+                try newKeyValue()
+                
+            case .less:
+                if let (a, b) = stackTopAreNumbers() {
+                    stack[stackTop - 2] = .boolean(a < b)
+                    stackTop -= 1
+                } else {
+                    try invokeBinary(signature: "<(_)")
+                }
+                
+            case .lessEqual:
+                if let (a, b) = stackTopAreNumbers() {
+                    stack[stackTop - 2] = .boolean(a <= b)
+                    stackTop -= 1
+                } else {
+                    try invokeBinary(signature: "<=(_)")
+                }
+                
+            case .list:
+                try newListLiteral(itemCount: Int(readByte()))
+                
+            case .load0:
+                push(.number(0))
+                
+            case .load1:
+                push(.number(1))
+                
+            case .load2:
+                push(.number(2))
+                
+            case .loadMinus1:
+                push(.number(-1))
+                
+            case .loadMinus2:
+                push(.number(-2))
+                
+            case .localVarDeclaration:
+                // The compiler has declared a new local variable. The first UInt16 operand is the index in the
+                // constants table of the name of the variable declared. The second single byte operand is the
+                // slot the local occupies.
+                // The compiler should have already emitted `getLocal`.
+                guard case .string(let variableName) = readConstantLong() else {
+                    throw error(message: "Expected an index to a local variable name to be on the top of the stack.")
+                }
+                currentFrame.locals[variableName] = Int(readByte())
+                
+            case .logicalXor:
+                let b = pop()
+                let a = pop()
+                push(.boolean(isTruthy(a) != isTruthy(b)))
+                
+            case .loop:
+                // Unconditionally jump the specified offset back from the current instruction pointer.
+                // +2 accounts for the 2 bytes we read.
+                currentFrame.ip -= readUInt16() + 2
+                
+            case .map:
+                newMapLiteral(Int(readByte()))
+                
             case.nothing:
                 push(.instance(nothing!))
                 
@@ -738,6 +876,34 @@ public class VM {
         push(value)
     }
     
+    /// Retrieves the value of a static field named `name` on the instance or class currently
+    /// on the top of the stack and then pushes it on to the top of the stack.
+    private func getStaticField(name: String) throws {
+        // The compiler guarantees that static fields can only be retrieved from within an instance
+        // method/constructor or a static method. Therefore, we will assume that
+        // either `this` or the class will should be in the method callframe's slot 0.
+        let receiver: Klass
+        switch stack[currentFrame.stackBase] {
+        case .instance(let instance):
+            receiver = instance.klass
+        case .klass(let klass):
+            receiver = klass
+        default:
+            throw error(message: "Only classes and instances have static fields.")
+        }
+        
+        // Get the value of the static field from the receiver.
+        var value = receiver.staticFields[name]
+        
+        // If the static field doesn't exist then we create it.
+        if value == nil {
+            receiver.staticFields[name] = .instance(nothing!)
+            value = .instance(nothing!)
+        }
+        
+        push(value!)
+    }
+    
     /// Invokes an overloaded binary operator method with `signature` on the
     /// callee (instance/class) and operand on the stack.
     ///
@@ -842,6 +1008,100 @@ public class VM {
         }
     }
     
+    /// Returns True if `value` is *not* considered "falsey".
+    ///
+    /// Objo considers the boolean value `false` and the Objo value `nothing` to
+    /// be false, everything else is true.
+    private func isTruthy(_ value: Value) -> Bool {
+        switch value {
+        case .boolean(let b):
+            return b
+            
+        case .instance(let i):
+            return i.klass.name != "Nothing"
+            
+        default:
+            return true
+        }
+    }
+    
+    /// Handles the `inherit` instruction.
+    ///
+    /// The compiler ensures that the stack looks like this when a class declaration specifies
+    /// the class has a superclass.
+    ///
+    ///```
+    /// | superclass  <-- top of the stack.
+    /// | subclass
+    /// ```
+    private func inherit() throws {
+        guard case .klass(let superclass) = peek(0) else {
+            throw error(message: "Can only inherit from other classes.")
+        }
+        
+        guard case .klass(let subclass) = peek(1) else {
+            throw error(message: "Expected to find a subclass on the stack.")
+        }
+        
+        // At this point, no methods have been defined on the subclass (since this
+        // instruction should only occur within a class declaration). Therefore, copy all the
+        // superclass's methods to the class on the stack.
+        // NB: We don't inherit static methods or constructors **unless** the immediate
+        // superclass is `Object`. In this case, we inherit the static methods.
+        // This allows `Object` to provide static operator overloads.
+        // CHECK: In Xojo we have to clone the dictionaries but I think there are value types
+        subclass.methods = superclass.methods
+        
+        if superclass.name == "Object" {
+            // CHECK: In Xojo we have to clone the dictionaries but I think there are value types
+            subclass.staticMethods = superclass.staticMethods
+        }
+        
+        // This class should keep a reference to its superclass.
+        subclass.superclass = superclass
+        
+        // Pop the superclass off the stack.
+        pop()
+    }
+    
+    /// Invokes a method on an instance of a class. The receiver containing the method should be on the stack
+    /// along with any arguments it requires.
+    ///
+    /// ```
+    /// | argN <-- top of stack
+    /// | arg1
+    /// | instance/class
+    /// ```
+    private func invoke(signature: String, argCount: Int) throws {
+        // Query the receiver from the stack. It should be beneath any arguments to the invocation.
+        // We therefore peek `argCount` distance from the top.
+        
+        let klass: Klass
+        var isStatic = false // Assume the method is directly on the instance.
+        switch stack[stackTop - argCount - 1] {
+        case .number:
+            klass = numberClass!
+            
+        case .string:
+            klass = stringClass!
+            
+        case .klass(let k):
+            klass = k
+            isStatic = true // This is actually a static method invocation.
+            
+        case .instance(let instance):
+            klass = instance.klass
+            
+        case .boolean:
+            klass = booleanClass!
+            
+        default:
+            throw error(message: "Only classes and instances have methods.")
+        }
+        
+        try invokeFromClass(klass: klass, signature: signature, argCount: argCount, isStatic: isStatic)
+    }
+    
     /// Returns `true` if `opcode` is worth stopping on.
     ///
     /// We stop on the following operations:
@@ -858,7 +1118,7 @@ public class VM {
     
     /// Creates and returns a new class.
     private func newClass(name: String, isForeign: Bool, fieldCount: Int, firstFieldIndex: Int) throws -> Klass {
-        let klass = Klass(name: name, isForeign: isForeign, fieldCount: fieldCount, firstFieldIndex: firstFieldIndex)
+        let klass = Klass(vm: self, name: name, isForeign: isForeign, fieldCount: fieldCount, firstFieldIndex: firstFieldIndex)
         
         // All classes (except `Object`, obviously) inherit Object's static methods.
         if klass.name != "Object" {
@@ -877,6 +1137,59 @@ public class VM {
         return klass
     }
     
+    /// Creates a new `KeyValue` instance. The compiler should have placed the key and value on the stack
+    /// with the `KeyValue` class beneath them.
+    ///
+    /// ```
+    /// key             <-- top of the stack
+    /// value
+    /// KeyValue class
+    /// ```
+    private func newKeyValue() throws {
+        guard case .klass(let kvClass) = peek(2) else {
+            throw error(message: "Expected the KeyValue class beneath two constructor arguments.")
+        }
+        try callClass(kvClass, argCount: 2)
+        
+        // Read the key and value and wrap in a tuple.
+        let data = (key: pop(), value: pop())
+        
+        // The top of the stack will now be a `KeyValue` instance. Set it's foreign data.
+        guard case .instance(let kvInstance) = stack[stackTop - 1] else {
+            // This really shouldn't happen since `callClass()` put the instance where it should be...
+            throw error(message: "`callClass()` failed to put a KeyValue instance on the top of the stack.")
+        }
+        kvInstance.foreignData = data
+        
+        // Update the current callframe (since `callClass()` doesn't do this for us) and
+        // we have invoked an actual constructor.
+        frames.removeLast()
+    }
+    
+    /// Creates a new list literal. The compiler will have placed the `List` class on the stack
+    /// and any initial elements above this.
+    private func newListLiteral(itemCount: Int) throws {
+        // Pop and store any optional initial elements.
+        var items: [Value] = []
+        for _ in 1...itemCount {
+            items.insert(pop(), at: 0)
+        }
+        
+        // Call the default `List` constructor.
+        guard case .klass(let listClass) = peek(0) else {
+            throw error(message: "Expected the List class to be on the top of the stack.")
+        }
+        try callClass(listClass, argCount: 0)
+        
+        // The top of the stack will now be a `List` instance.
+        // Add the initial elements to it's foreign data.
+        guard case .instance(let listInstance) = stack[stackTop - 1] else {
+            // This really shouldn't happen since `callClass()` put the instance where it should be...
+            throw error(message: "`callClass()` failed to put a List instance on the top of the stack.")
+        }
+        listInstance.foreignData = items
+    }
+    
     /// Returns the value `distance` from the top of the stack.
     /// Leaves the value on the stack.
     /// A value of `0` would return the top item.
@@ -885,7 +1198,7 @@ public class VM {
     }
     
     /// Pops a value off of the stack and returns it.
-    private func pop() -> Value {
+    @discardableResult private func pop() -> Value {
         stackTop -= 1
         return stack[stackTop]!
     }
