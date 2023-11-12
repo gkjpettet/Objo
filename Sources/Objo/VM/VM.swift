@@ -26,6 +26,10 @@ public class VM {
     /// name of the class -> (VM, the instance being instantiated as a Value, the arguments to the constructor)
     public var bindForeignClass: ((String) -> (VM, inout Value, [Value]) -> Void)?
     
+    /// The function that is called when defining a foreign method. The host should return the callback to use whenever that foreign method is called. The signature for that callback always takes the VM as the argument and returns Void.
+    // (className, signature, isStatic) -> (VM) -> Void
+    public var bindForeignMethod: ((String, String, Bool) -> ((VM) -> Void))?
+    
     /// The function that is called when the VM has finished execution.
     public var finished: (() -> Void)?
     
@@ -322,8 +326,51 @@ public class VM {
             case.defineNothing:
                 defineNothing()
                 
+            case .divide:
+                if let (a, b) = stackTopAreNumbers() {
+                    stack[stackTop - 2] = .number(a / b)
+                    stackTop -= 1
+                } else {
+                    try invokeBinary(signature: "/(_)")
+                }
+                
+            case .equal:
+                if let (a, b) = stackTopAreNumbers() {
+                    stack[stackTop - 2] = .boolean(a == b)
+                    stackTop -= 1
+                } else {
+                    try invokeBinary(signature: "==(_)")
+                }
+                
+            case .exit:
+                throw error(message: "Unexpected `exit` placeholder instruction. The chunk is invalid.")
+                
+            case.false_:
+                push(.boolean(false))
+                
+            case .foreignMethod:
+                guard case .string(let signature) = readConstantLong() else {
+                    throw error(message: "Expected an index to a signature on the top of the stack.")
+                }
+                try defineForeignMethod(signature: signature, arity: Int(readByte()), isStatic: readByte() == 1 ? true : false)
+                
+            case .getField:
+                try getField(fieldIndex: Int(readByte()))
+                
+            case .getGlobal:
+                guard case .string(let name) = readConstant() else {
+                    throw error(message: "Expected an index to a global name on the top of the stack.")
+                }
+                try getGlobal(name: name)
+                
+            case .getGlobalLong:
+                guard case .string(let name) = readConstantLong() else {
+                    throw error(message: "Expected an index to a global name on the top of the stack.")
+                }
+                try getGlobal(name: name)
+                
             case.nothing:
-                push(.nothing(nothing!))
+                push(.instance(nothing!))
                 
             case .pop:
                 stackTop -= 1
@@ -366,6 +413,62 @@ public class VM {
         }
         
         klass.fields[fieldIndex] = fieldName
+    }
+    
+    /// The VM is requesting the callback to use when calling the specified foreign method on a class.
+    /// The host application will have failed to provide one.
+    /// We check our standard libraries.
+    ///
+    /// Returns `nil` if none defined.
+    private func bindCoreForeignMethod(className: String, signature: String, isStatic: Bool) throws -> ((VM) -> Void)? {
+        switch className {
+        case "Boolean":
+            // TODO: Implement.
+            throw error(message: "The foreign methods for the Boolean class have not yet been implemented.")
+            
+        case "KeyValue":
+            // TODO: Implement.
+            throw error(message: "The foreign methods for the KeyValue class have not yet been implemented.")
+            
+        case "List":
+            // TODO: Implement.
+            throw error(message: "The foreign methods for the List class have not yet been implemented.")
+            
+        case "Map":
+            // TODO: Implement.
+            throw error(message: "The foreign methods for the Map class have not yet been implemented.")
+            
+        case "Maths":
+            // TODO: Implement.
+            throw error(message: "The foreign methods for the Maths class have not yet been implemented.")
+            
+        case "Nothing":
+            // TODO: Implement.
+            throw error(message: "The foreign methods for the Nothing class have not yet been implemented.")
+            
+        case "Number":
+            // TODO: Implement.
+            throw error(message: "The foreign methods for the Number class have not yet been implemented.")
+            
+        case "Object":
+            // TODO: Implement.
+            throw error(message: "The foreign methods for the Object class have not yet been implemented.")
+            
+        case "Random":
+            // TODO: Implement.
+            throw error(message: "The foreign methods for the Random class have not yet been implemented.")
+            
+        case "String":
+            // TODO: Implement.
+            throw error(message: "The foreign methods for the String class have not yet been implemented.")
+            
+        case "System":
+            // TODO: Implement.
+            throw error(message: "The foreign methods for the System class have not yet been implemented.")
+            
+        default:
+            return nil
+        }
     }
     
     /// "Calls" a class. Essentially this creates a new instance.
@@ -430,7 +533,7 @@ public class VM {
         }
         
         // Push nothing on to the stack in case the method doesn't set a return value.
-        push(.nothing(nothing!))
+        push(.instance(nothing!))
         
         // Call the foreign method.
         fm.method(self)
@@ -456,7 +559,7 @@ public class VM {
     }
     
     /// Performs a call on the passed value which expects to find `argCount` arguments on the call stack.
-    private func  callValue(_ value: Value, argCount: Int) throws {
+    private func callValue(_ value: Value, argCount: Int) throws {
         switch value {
         case .klass(let k):
             try callClass(k, argCount: argCount)
@@ -558,6 +661,32 @@ public class VM {
         }
     }
     
+    /// Defines a foreign method with `signature` and `arity` on the class on the top of the stack.
+    private func defineForeignMethod(signature: String, arity: Int, isStatic: Bool) throws {
+        guard case .klass(let klass) = peek(0) else {
+            throw error(message: "Expected a class on the top of the stack.")
+        }
+        
+        // Ask the host for the callback to use. This overrides any specified by the core libraries.
+        var callback = bindForeignMethod?(klass.name, signature, isStatic)
+        if callback == nil {
+            // The host application doesn't have a callback for us. Check if the core libraries do.
+            callback = try bindCoreForeignMethod(className: klass.name, signature: signature, isStatic: isStatic)
+            if callback == nil {
+                throw error(message: "The host application failed to return a foreign method callback for `\(klass.name).\(signature)`.")
+            }
+        }
+        
+        // Create the foreign method.
+        let fm = ForeignMethod(signature: signature, arity: arity, uuid: UUID(), method: callback!)
+        
+        if isStatic {
+            klass.staticMethods[signature] = .foreignMethod(fm)
+        } else {
+            klass.methods[signature] = .foreignMethod(fm)
+        }
+    }
+    
     /// The compiler has just defined the `Nothing` class and left it on the top of the stack for us.
     /// Create our single instance of Nothing for use throughout the VM.
     ///
@@ -580,6 +709,33 @@ public class VM {
         }
         
         return VMError(line: currentChunk.lineForOffset(ip), message: message, scriptId: currentChunk.scriptIDForOffset(ip), stackDump: stackDump(), stackTrace: stackTrace)
+    }
+    
+    /// Retrieves the value of an instance field at `fieldIndex` from the instance currently
+    /// on the top of the stack and then pushes it on to the top of the stack.
+    private func getField(fieldIndex: Int) throws {
+        // Since instance fields can only be retrieved from within a method,
+        // `this` should be in the method callframe's slot 0.
+        guard case .instance(let instance) = stack[currentFrame.stackBase] else {
+            if case .klass = stack[currentFrame.stackBase] {
+                throw error(message: "You cannot access an instance field from a static method.")
+            } else {
+                throw error(message: "Only instances have fields")
+            }
+        }
+        
+        // Get the value of the field from the instance and push it on to the stack.
+        push(instance.fields[fieldIndex])
+    }
+    
+    /// Reads the value of a global variable named `name` and pushes it on to the stack.
+    /// Raises a runtime error if the global variable doesn't exist.
+    private func getGlobal(name: String) throws {
+        guard let value = globals[name] else {
+            throw error(message: "Undefined variable `\(name)`.")
+        }
+        
+        push(value)
     }
     
     /// Invokes an overloaded binary operator method with `signature` on the
@@ -675,8 +831,8 @@ public class VM {
     /// be false, everything else is true.
     private func isFalsey(_ value: Value) -> Bool {
         switch value {
-        case .nothing:
-            return true
+        case .instance(let instance):
+            return instance.klass.name == "Nothing"
             
         case .boolean(let b):
             return !b

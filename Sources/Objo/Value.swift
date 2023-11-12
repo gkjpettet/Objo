@@ -14,7 +14,6 @@ public enum Value: CustomStringConvertible, Hashable {
     case function(Function)
     case instance(Instance)
     case klass(Klass)
-    case nothing(Nothing)
     case number(Double)
     case string(String)
     
@@ -37,9 +36,6 @@ public enum Value: CustomStringConvertible, Hashable {
             
         case .klass(let k):
             return k.name
-            
-        case .nothing:
-            return "nothing"
             
         case .number(let d):
             return String(d)
