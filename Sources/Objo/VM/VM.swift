@@ -39,11 +39,14 @@ public class VM {
     
     // MARK: - Public properties
     
-    /// The API slot array. Used to pass data between the VM and the host application.
-    public var slots: [Value] = []
-    
     /// If `true` then the VM is in low performance debug mode and can interact with chunks compiled in debug mode to provide debugging information.
     public var debugMode: Bool = false
+    
+    /// The VM's singleton instance of `nothing`. Will be nil whilst bootstrapping.
+    private(set) var nothing: Nothing?
+    
+    /// The API slot array. Used to pass data between the VM and the host application.
+    public var slots: [Value?] = []
     
     // MARK: - Private properties
     
@@ -139,8 +142,10 @@ public class VM {
         frames = []
         
         /// API
-        slots = Array(repeating: .nothing, count: VM.MAX_SLOTS)
+        slots = Array(repeating: nil, count: VM.MAX_SLOTS)
         
+        // The VM will set this once it has defined the `Nothing` class within the runtime.
+        nothing = nil
         
         globals = [:]
         
@@ -288,9 +293,37 @@ public class VM {
             case .constantLong:
                 push(readConstantLong())
                 
+            case .constructor:
+                try defineConstructor(argCount: Int(readByte()))
+                
+            case .debugFieldName:
+                /// The compiler should have ensured that the field name to add to is on the top of the stack.
+                guard case .string(let fieldName) = readConstantLong() else {
+                    throw error(message: "Expected a field name on the top of the stack.")
+                }
+                try addFieldNameToClass(fieldName: fieldName, fieldIndex: Int(readByte()))
+                
+            case .defineGlobal:
+                // The constants table index of the name of the global variable is on the top of the stack
+                // and the value should be beneath it.
+                guard case .string(let globalName) = readConstant() else {
+                    throw error(message: "Expected, on the top of the stack, an index into the constants table for the name of the global to define.")
+                }
+                globals[globalName] = pop()
+                
+            case .defineGlobalLong:
+                // The constants table index of the name of the global variable is on the top of the stack
+                // and the value should be beneath it.
+                guard case .string(let globalName) = readConstantLong() else {
+                    throw error(message: "Expected, on the top of the stack, an index into the constants table for the name of the global to define.")
+                }
+                globals[globalName] = pop()
+                
+            case.defineNothing:
+                defineNothing()
+                
             case.nothing:
-                // a nothing literal.
-                push(.nothing)
+                push(.nothing(nothing!))
                 
             case .pop:
                 stackTop -= 1
@@ -321,6 +354,19 @@ public class VM {
     }
     
     // MARK: - Private methods
+    
+    /// Adds a named field to the class on the top of the stack.
+    ///
+    /// When the compiler is building a debuggable chunk, it will emit the names and indexes
+    /// of all of a class' fields.
+    private func addFieldNameToClass(fieldName: String, fieldIndex: Int) throws {
+        // The compiler should have ensured that the class to add to is on the top of the stack.
+        guard case .klass(let klass) = peek(0) else {
+            throw error(message: "Expected a class to be on the top of the stack.")
+        }
+        
+        klass.fields[fieldIndex] = fieldName
+    }
     
     /// "Calls" a class. Essentially this creates a new instance.
     ///
@@ -384,7 +430,7 @@ public class VM {
         }
         
         // Push nothing on to the stack in case the method doesn't set a return value.
-        push(.nothing)
+        push(.nothing(nothing!))
         
         // Call the foreign method.
         fm.method(self)
@@ -443,13 +489,34 @@ public class VM {
         }
     }
     
+    /// Defines a constructor on the class just below the constructor's body on the stack.
+    /// Will pop the constructor off the stack but leave the class in place.
+    ///
+    /// The constructor's body should be on the top of the stack with its class just beneath it:
+    ///
+    ///```
+    ///                   <---- stack top
+    /// constructor body
+    /// class
+    /// ```
+    private func defineConstructor(argCount: Int) throws {
+        guard case .function(let constructor) = pop() else {
+            throw error(message: "Expected a constructor on the top of the stack.")
+        }
+        
+        guard case .klass(let klass) = peek(0) else {
+            throw error(message: "Expected a class to be beneath the constructor on the stack.")
+        }
+        
+        // Constructors are stored on the class by arity.
+        // Therefore `klass.constructors[0]` is a constructor with 0 arguments,
+        // `klass.constructors[2]` is a constructor with 2 arguments, etc.
+        klass.constructors[argCount] = constructor
+    }
+    
     /// Defines a foreign class. Assumes the class is already on the top of the stack.
     private func defineForeignClass() throws {
-        let klass: Klass
-        switch peek(0) {
-        case .klass(let k):
-            klass = k
-        default:
+        guard case .klass(let klass) = peek(0) else {
             throw error(message: "Expected a class on the top of the stack but got `\(String(describing: peek(0)))`.")
         }
         
@@ -489,6 +556,15 @@ public class VM {
         default:
             break
         }
+    }
+    
+    /// The compiler has just defined the `Nothing` class and left it on the top of the stack for us.
+    /// Create our single instance of Nothing for use throughout the VM.
+    ///
+    /// We'll leave the Nothing class on the stack - the compiler will instruct us to
+    /// pop it off for us momentarily.
+    private func defineNothing() {
+        nothing = Nothing(klass: nothingClass!)
     }
     
     /// Returns a VMError at the current IP (unless otherwise specified).
@@ -744,18 +820,17 @@ public class VM {
     /// a
     /// ```
     private func stackTopAreNumbers() -> (Double, Double)? {
-        let a = stack[stackTop - 2]
-        let b = stack[stackTop - 1]
-        switch a {
-        case .number(let aValue):
-            switch b {
-            case .number(let bValue):
-                return (aValue, bValue)
-            default:
-                return nil
-            }
-        default:
+        let aValue = stack[stackTop - 2]
+        let bValue = stack[stackTop - 1]
+        
+        guard case .number(let a) = aValue else {
             return nil
         }
+        
+        guard case .number(let b) = bValue else {
+            return nil
+        }
+        
+        return (a, b)
     }
 }

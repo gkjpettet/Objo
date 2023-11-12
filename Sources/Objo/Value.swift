@@ -14,7 +14,7 @@ public enum Value: CustomStringConvertible, Hashable {
     case function(Function)
     case instance(Instance)
     case klass(Klass)
-    case nothing
+    case nothing(Nothing)
     case number(Double)
     case string(String)
     

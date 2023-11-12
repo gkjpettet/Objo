@@ -17,8 +17,8 @@ public class Klass: MethodReceiver, Equatable, Hashable {
     
     // MARK: - Public properties
     
-    /// The class's constructors. The index is the argument count.
-    public var constructors: [Function] = []
+    /// The class's constructors. Key = arity, value = the constructor's body.
+    public var constructors: [Int : Function] = [:]
     
     /// The total number of instance fields used by this class (including inherited fields).
     public let fieldCount: Int
@@ -61,7 +61,7 @@ public class Klass: MethodReceiver, Equatable, Hashable {
     // MARK: - Equatable protocol
     
     public static func == (lhs: Klass, rhs: Klass) -> Bool {
-        if lhs.name == rhs.name && lhs.superclass == rhs.superclass && lhs.firstFieldIndex == rhs.firstFieldIndex && lhs.isForeign == rhs.isForeign && lhs.methods == rhs.methods && lhs.fields.elementsEqual(rhs.fields) && lhs.staticFields == rhs.staticFields && lhs.staticMethods == rhs.staticMethods {
+        if lhs.name == rhs.name && lhs.superclass == rhs.superclass && lhs.firstFieldIndex == rhs.firstFieldIndex && lhs.isForeign == rhs.isForeign && lhs.methods == rhs.methods && lhs.fields.elementsEqual(rhs.fields) && lhs.staticFields == rhs.staticFields && lhs.staticMethods == rhs.staticMethods && lhs.constructors == rhs.constructors {
             return true
         } else {
             return false
