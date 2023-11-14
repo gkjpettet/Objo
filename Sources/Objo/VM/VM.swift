@@ -601,6 +601,23 @@ public class VM {
                 }
                 self.globals[globalName] = peek(0)
                 
+            case .setLocal:
+                // The operand is the stack slot where the local variable lives.
+                // Store the value at the top of the stack in the stack slot corresponding to the local variable.
+                stack[currentFrame.stackBase + Int(readByte())] = peek(0)
+                
+            case .setStaticField:
+                guard case .string(let fieldName) = readConstant() else {
+                    throw error(message: "Expected a constants table index to a static field name on the top of the stack.")
+                }
+                try setStaticField(name: fieldName)
+                
+            case .setStaticFieldLong:
+                guard case .string(let fieldName) = readConstantLong() else {
+                    throw error(message: "Expected a constants table index to a static field name on the top of the stack.")
+                }
+                try setStaticField(name: fieldName)
+                
             case .shiftLeft:
                 if let (a, b) = stackTopAreNumbers() {
                     stack[stackTop - 2] = .number(Double(Int(a) << Int(b)))
@@ -672,9 +689,6 @@ public class VM {
                 
             case .true_:
                 push(.boolean(true))
-                
-            default:
-                throw error(message: "Opcode `\(String(describing: opcode))` not yet implemented.")
             }
             
             // For step-debugging.
@@ -1454,6 +1468,38 @@ public class VM {
         // Set the field to the value on the top of the stack and pop it off.
         let value = pop()
         instance.fields[fieldIndex] = value
+        
+        // Push the value back on the stack (since this is an expression).
+        push(value)
+    }
+    
+    /// Sets a static field named `name` on the class (or instance's class) that is one from the top of the
+    /// stack to the value on the top of the stack.
+    ///
+    /// ```
+    /// |
+    /// | ValueToAssign       <-- top of the stack
+    /// | class or instance   <-- should have the static field named `name`.
+    /// |
+    /// ```
+    private func setStaticField(name: String) throws {
+        // The compiler guarantees that static fields can only be set from within a method or constructor
+        // so we can safely assume that `this` will be in the
+        // method callframe's slot 0 (`stackBase`).
+        let receiver: Klass
+        let tmp = stack[currentFrame.stackBase]
+        if case .klass(let klass) = tmp {
+            receiver = klass
+        } else if case .instance(let instance) = tmp {
+            receiver = instance.klass
+        } else {
+            throw error(message: "Only classes and instances have static fields.")
+        }
+        
+        // Set the static field to the value on the top of the stack and pop it off.
+        // If the static field has never been assigned to before then we create it.
+        let value = pop()
+        receiver.staticFields[name] = value
         
         // Push the value back on the stack (since this is an expression).
         push(value)
