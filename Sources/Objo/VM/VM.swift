@@ -505,7 +505,55 @@ public class VM {
                 currentFrame.ip -= readUInt16() + 2
                 
             case .map:
-                newMapLiteral(Int(readByte()))
+                try newMapLiteral(keyValueCount: Int(readByte()))
+                
+            case .method:
+                guard case .string(let signature) = readConstantLong() else {
+                    throw error(message: "Expected a constants table index to a signature on the top of the stack.")
+                }
+                try defineMethod(signature: signature, isStatic: readByte() != 0)
+                
+            case.modulo:
+                if let (a, b) = stackTopAreNumbers() {
+                    stack[stackTop - 2] = .number(a.truncatingRemainder(dividingBy: b))
+                    stackTop -= 1
+                } else {
+                    try invokeBinary(signature: "%(_)")
+                }
+                
+            case .multiply:
+                if let (a, b) = stackTopAreNumbers() {
+                    stack[stackTop - 2] = .number(a * b)
+                    stackTop -= 1
+                } else {
+                    try invokeBinary(signature: "*(_)")
+                }
+                
+            case .negate:
+                if case .number(let d) = peek(0) {
+                    stack[stackTop - 1] = .number(-d)
+                } else {
+                    try invoke(signature: "-()", argCount: 0)
+                }
+                
+            case .not:
+                if case .boolean(let b) = stack[stackTop - 1] {
+                    // "notting" a boolean is so common we'll implement it inline.
+                    stack[stackTop - 1] = .boolean(!b)
+                } else {
+                    try invokeUnary(signature: "not()")
+                }
+                
+            case .notEqual:
+                if let (a, b) = stackTopAreNumbers() {
+                    stack[stackTop - 2] = .boolean(a != b)
+                    stackTop -= 1
+                } else if case .boolean(let b1) = peek(0), case .boolean(let b2) = peek(1) {
+                    stack[stackTop - 2] = .boolean(b1 != b2)
+                    stackTop -= 1
+                } else {
+                    try invokeBinary(signature: "<>(_)")
+                }
                 
             case.nothing:
                 push(.instance(nothing!))
@@ -822,6 +870,31 @@ public class VM {
             klass.staticMethods[signature] = .foreignMethod(fm)
         } else {
             klass.methods[signature] = .foreignMethod(fm)
+        }
+    }
+    
+    /// Defines a method with `signature` on the class just below the method's body on the stack.
+    /// Pops the method off the stack but leaves the class in place.
+    ///
+    /// The method's body should be on the top of the stack with its class just beneath it:
+    ///
+    /// ```
+    /// method
+    /// class
+    /// ```
+    private func defineMethod(signature: String, isStatic: Bool) throws {
+        guard case .function(let method) = pop() else {
+            throw error(message: "Expected a method on the top of the stack.")
+        }
+        
+        guard case .klass(let klass) = peek(0) else {
+            throw error(message: "Expected a class on the top of the stack.")
+        }
+        
+        if isStatic {
+            klass.staticMethods[signature] = .function(method)
+        } else {
+            klass.methods[signature] = .function(method)
         }
     }
     
@@ -1188,6 +1261,32 @@ public class VM {
             throw error(message: "`callClass()` failed to put a List instance on the top of the stack.")
         }
         listInstance.foreignData = items
+    }
+    
+    /// Creates a new `Map` instance. The compiler will have placed the `Map` class on the stack
+    /// and any initial key-value pairs above this.
+    private func newMapLiteral(keyValueCount: Int) throws {
+        // Pop and store any optional initial key-values.
+        // These are compiled so the key is above the value on the stack.
+        var keyValues: [Value : Value] = [:]
+        for _ in 1...keyValueCount {
+            keyValues[pop()] = pop()
+        }
+        
+        guard case .klass(let klass) = peek(0) else {
+            throw error(message: "Expected to find the `Map` class on the top of the stack.")
+        }
+        
+        // Call the zero argument `Map` constructor.
+        try callClass(klass, argCount: 0)
+        
+        // The top of the stack will now be a `Map` instance.
+        guard case .instance(let mapInstance) = stack[stackTop - 1] else {
+            throw error(message: "Expected a `Map` instance on the top of the stack.")
+        }
+        
+        // Set the instance's foreign data to the key-values we popped off the stack.
+        mapInstance.foreignData = keyValues
     }
     
     /// Returns the value `distance` from the top of the stack.
