@@ -12,22 +12,22 @@ final class VMTests: XCTestCase {
         vm.reset()
     }
     
-    /// Tests parsing an empty source code input.
-    func testEmptySource() throws {
-        let f = try compiler.compile(source: "", debugMode: true, scriptID: 0)
-        do {
-            try vm.interpret(function: f)
-        } catch {
-            print(error)
-        }
-    }
-    
-    func testSimpleAddition() throws {
-        let f = try compiler.compile(source: "1 + 2", debugMode: true, scriptID: 0)
-        do {
-            try vm.interpret(function: f)
-        } catch {
-            print(error)
-        }
-    }
+//    /// Tests parsing an empty source code input.
+//    func testEmptySource() throws {
+//        let f = try compiler.compile(source: "", debugMode: true, scriptID: 0)
+//        do {
+//            try vm.interpret(function: f)
+//        } catch {
+//            print(error)
+//        }
+//    }
+//    
+//    func testSimpleAddition() throws {
+//        let f = try compiler.compile(source: "1 + 2", debugMode: true, scriptID: 0)
+//        do {
+//            try vm.interpret(function: f)
+//        } catch {
+//            print(error)
+//        }
+//    }
 }

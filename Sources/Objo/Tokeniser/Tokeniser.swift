@@ -254,16 +254,11 @@ public class Tokeniser {
         
         // Is this a double or an integer? Default to it being an integer.
         var isInteger = true
-        if peek() == "." {
+        if peek() == "." && peek(distance: 1).isDigit() {
             isInteger = false
             
             // Consume the decimal point.
             lexemeChars.append(advance())
-            
-            // We must see at least one digit.
-            if !peek().isDigit() {
-                throw error(type: .syntaxError, message: "Expected a digit after the decimal point.")
-            }
             
             // Get the fractional component.
             while peek().isDigitOrUnderscore() {
