@@ -565,6 +565,12 @@ public class VM {
                 // Pop N values off the stack. N is the single byte operand.
                 stackTop = stackTop - Int(readByte())
                 
+            case .rangeExclusive:
+                try invokeBinary(signature: "..<(_)")
+                
+            case .rangeInclusive:
+                try invokeBinary(signature: "...(_)")
+                
             case .return_:
                 // Pop the return value off the stack and put it in slot 0 of the API slots array so the host application can access it.
                 slots[0] = pop()
@@ -580,9 +586,101 @@ public class VM {
                     return
                 }
                 
+            case .setField:
+                try setField(fieldIndex: Int(readByte()))
+                
+            case .setGlobal:
+                guard case .string(let globalName) = readConstant() else {
+                    throw error(message: "Expected a constants table index to a global variable's name on the top of the stack.")
+                }
+                self.globals[globalName] = peek(0)
+                
+            case .setGlobalLong:
+                guard case .string(let globalName) = readConstantLong() else {
+                    throw error(message: "Expected a constants table index to a global variable's name on the top of the stack.")
+                }
+                self.globals[globalName] = peek(0)
+                
+            case .shiftLeft:
+                if let (a, b) = stackTopAreNumbers() {
+                    stack[stackTop - 2] = .number(Double(Int(a) << Int(b)))
+                    stackTop -= 1
+                } else {
+                    try invokeBinary(signature: "<<(_)")
+                }
+                
+            case .shiftRight:
+                if let (a, b) = stackTopAreNumbers() {
+                    stack[stackTop - 2] = .number(Double(Int(a) >> Int(b)))
+                    stackTop -= 1
+                } else {
+                    try invokeBinary(signature: ">>(_)")
+                }
+                
+            case .subtract:
+                if let (a, b) = stackTopAreNumbers() {
+                    stack[stackTop - 2] = .number(a - b)
+                    stackTop -= 1
+                } else {
+                    try invokeBinary(signature: "-(_)")
+                }
+                
+            case .subtract1:
+                if case .number(let d) = peek(0) {
+                    stack[stackTop - 1] = .number(d - 1)
+                } else {
+                    push(.number(1))
+                    try invokeBinary(signature: "-(_)")
+                }
+                
+            case .superConstructor:
+                guard case .string(let superclassName) = readConstantLong() else {
+                    throw error(message: "Expected a constants table index to a superclass name on the top of the stack.")
+                }
+                try superConstructor(superclassName: superclassName, argCount: Int(readByte()))
+                
+            case .superInvoke:
+                guard case .string(let superclassName) = readConstantLong() else {
+                    throw error(message: "Expected a constants table index to a superclass name on the top of the stack.")
+                }
+                
+                guard case .string(let signature) = readConstantLong() else {
+                    throw error(message: "Expected a constants table index to a signature name on the top of the stack.")
+                }
+                
+                try superInvoke(superclassName: superclassName, signature: signature, argCount: Int(readByte()))
+                
+            case .superSetter:
+                guard case .string(let superclassName) = readConstantLong() else {
+                    throw error(message: "Expected a constants table index to a superclass name on the top of the stack.")
+                }
+                
+                guard case .string(let signature) = readConstantLong() else {
+                    throw error(message: "Expected a constants table index to a signature name on the top of the stack.")
+                }
+                
+                try superInvoke(superclassName: superclassName, signature: signature, argCount: 1)
+                
+            case.swap:
+                // Swap the two values on the top of the stack.
+                // Do this in-place to avoid push/pop calls.
+                //   b       a
+                //   a  -->  b
+                let tmp = stack[stackTop - 1]
+                stack[stackTop - 1] = stack[stackTop - 2]
+                stack[stackTop - 2] = tmp
+                
+            case .true_:
+                push(.boolean(true))
+                
             default:
                 throw error(message: "Opcode `\(String(describing: opcode))` not yet implemented.")
             }
+            
+            // For step-debugging.
+            lastInstructionFrame = currentFrame
+            
+            _isRunning = false
         }
     }
     
@@ -1332,6 +1430,35 @@ public class VM {
         return Int(currentChunk.readUInt16(offset: currentFrame.ip - 2))
     }
     
+    /// Sets the field at `fieldIndex` on the instance that is one from the top of
+    /// the stack to the value on the top of the stack.
+    ///
+    /// ```
+    /// |
+    /// | ValueToAssign   <-- top of the stack
+    /// | Instance        <-- the instance that should have the field at `fieldIndex`.
+    /// |
+    /// ````
+
+    private func setField(fieldIndex: Int) throws {
+        // Since fields can only be set from within a method, the compiler should have
+        // ensured that `this` is in the method callframe's slot 0 (`stackBase`).
+        guard case .instance(let instance) = stack[currentFrame.stackBase] else {
+            if case .klass = stack[currentFrame.stackBase] {
+                throw error(message: "You cannot set an instance field from a static method.")
+            } else {
+                throw error(message: "Only instances have fields.")
+            }
+        }
+        
+        // Set the field to the value on the top of the stack and pop it off.
+        let value = pop()
+        instance.fields[fieldIndex] = value
+        
+        // Push the value back on the stack (since this is an expression).
+        push(value)
+    }
+    
     /// Returns `true` if the VM should break (exit its run loop) or `false` if it should continue.
     /// `true` indicates we've reached a sensible stopping point.
     private func shouldBreak() throws -> Bool {
@@ -1400,5 +1527,47 @@ public class VM {
         }
         
         return (a, b)
+    }
+    
+    /// Invokes the specified superclass constructor on an instance. The instance should be on the stack
+    /// along with any arguments it requires.
+    ///
+    /// ```
+    /// |
+    /// | argN <-- top of stack
+    /// | arg1
+    /// | instance
+    /// ```
+    private func superConstructor(superclassName: String, argCount: Int) throws {
+        // Get the superclass. Since classes are all declared in the top level, it should be in `globals`.
+        // The compiler will have checked that the superclass exists during compilation.
+        guard case .klass(let superclass) = globals[superclassName] else {
+            throw error(message: "There is no superclass named `\(superclassName)` defined in the global environment.")
+        }
+        
+        // Call the correct constructor.
+        // The compiler will have guaranteed that the superclass has a constructor with the correct arity.
+        try callFunction(superclass.constructors[argCount]!, argCount: argCount)
+    }
+    
+    /// Invokes the specified method on the superclass of the instance on the stack.
+    /// The required arguments should also be on the stack.
+    ///
+    /// ```
+    /// |
+    /// | argN <-- top of stack
+    /// | arg1
+    /// | instance
+    /// ```
+    private func superInvoke(superclassName: String, signature: String, argCount: Int) throws {
+        // Get the superclass. Since classes are all declared in the top level, it should be in `globals`.
+        // The compiler will have checked that the superclass exists during compilation.
+        guard case .klass(let superclass) = globals[superclassName] else {
+            throw error(message: "There is no superclass named `\(superclassName)` defined in the global environment.")
+        }
+        
+        // Call the correct method.
+        // The compiler will have guaranteed that the superclass has a method with this signature.
+        try callValue(superclass.methods[signature]!, argCount: argCount)
     }
 }
