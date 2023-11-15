@@ -8,6 +8,20 @@
 import Foundation
 
 public struct VMError: Error {
+    /// A formatted version of this error for printing to the console.
+    public var pretty: String {
+        var output: [String] = ["", "Runtime error (line:\(line), id:\(scriptId))"]
+        output.append(message)
+        output.append("")
+        output.append("Stack dump:")
+        output.append(stackDump)
+        output.append("")
+        output.append("Stack trace:")
+        output.append(stackTrace.joined(separator: "\n"))
+        
+        return output.joined(separator: "\n")
+    }
+    
     /// The line number triggering this error.
     public let line: Int
     

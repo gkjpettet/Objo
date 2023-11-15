@@ -19,4 +19,9 @@ public struct ParserError: Error {
         self.message = message
         self.location = location
     }
+    
+    /// Returns a formatted string for displaying this error in the console.
+    public var pretty: String {
+        return "[\(location?.line ?? -1), \(location?.start ?? -1)]: \(message)"
+    }
 }

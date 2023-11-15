@@ -153,7 +153,7 @@ public class Compiler: ExprVisitor, StmtVisitor {
     private(set) var locals: [LocalVariable] = []
     
     /// This compiler's internal parser.
-    private var parser: Parser = Parser()
+    private(set) var parser: Parser = Parser()
     
     /// The time taken for the last parsing phase.
     private var parseTime: TimeInterval?
@@ -352,7 +352,8 @@ public class Compiler: ExprVisitor, StmtVisitor {
         locals = []
         // Claim slot 0 in the stack for the VM's internal use.
         // For methods and constructors it will be `this`.
-        let name: String? = (type == .method || type == .constructor ? "this" : nil)
+        // TODO: I don't like using a fake reserved name here. In Xojo it's an empty string...
+        let name: String = (type == .method || type == .constructor ? "this" : "*reserved")
         let synthetic = BaseToken(type: .identifier, start: 0, line: 1, lexeme: name, scriptId: -1)
         locals.append(LocalVariable(identifier: synthetic, depth: 0))
         
@@ -656,7 +657,7 @@ public class Compiler: ExprVisitor, StmtVisitor {
     ///     - trackAsGlobal: If `true` then this variable is a global variable (cannot be shadowed).
     private func declareVariable(identifier: Token, initialised: Bool, trackAsGlobal: Bool) throws {
         currentLocation = identifier
-        
+                
         if trackAsGlobal {
             if globalExists(name: identifier.lexeme!) {
                 try error(message: "Redefined global identifier `\(identifier.lexeme!)`.")
@@ -2831,8 +2832,8 @@ public class Compiler: ExprVisitor, StmtVisitor {
         
         // Loop variable scope.
         endScope()
-        
-        endScope()
+
+        try endLoop()
         
         // Hidden variables
         endScope()

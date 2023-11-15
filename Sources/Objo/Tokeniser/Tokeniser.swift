@@ -225,7 +225,7 @@ public class Tokeniser {
             }
             
             // Add this token.
-            _tokens.append(makeToken(type: type, hasLexeme: true))
+            _tokens.append(makeToken(type: type))
         }
     }
     
@@ -498,12 +498,13 @@ public class Tokeniser {
     }
     
     /// Returns a base token of the specified type beginning at _tokenStart on the current line in the current script.
-    private func makeToken(type: TokenType, hasLexeme: Bool = false) -> BaseToken {
-        if hasLexeme {
+    private func makeToken(type: TokenType) -> BaseToken {
+        switch type {
+        case .endOfLine, .eof:
+            return BaseToken(type: type, start: _tokenStart, line: _lineNumber, lexeme: nil, scriptId: _scriptId)
+        default:
             let lexeme = String(_chars[_tokenStart..._current - 1])
             return BaseToken(type: type, start: _tokenStart, line: _lineNumber, lexeme: lexeme, scriptId: _scriptId)
-        } else {
-            return BaseToken(type: type, start: _tokenStart, line: _lineNumber, lexeme: nil, scriptId: _scriptId)
         }
     }
     
@@ -689,25 +690,25 @@ public class Tokeniser {
             
         case "+":
             if match("=") {
-                addToken(makeToken(type: .plusEqual, hasLexeme: true))
+                addToken(makeToken(type: .plusEqual))
                 return
             } else if match("+") {
-                addToken(makeToken(type: .plusPlus, hasLexeme: true))
+                addToken(makeToken(type: .plusPlus))
                 return
             } else {
-                addToken(makeToken(type: .plus, hasLexeme: true))
+                addToken(makeToken(type: .plus))
                 return
             }
             
         case "-":
             if match("=") {
-                addToken(makeToken(type: .minusEqual, hasLexeme: true))
+                addToken(makeToken(type: .minusEqual))
                 return
             } else if match("-") {
-                addToken(makeToken(type: .minusMinus, hasLexeme: true))
+                addToken(makeToken(type: .minusMinus))
                 return
             } else {
-                addToken(makeToken(type: .minus, hasLexeme: true))
+                addToken(makeToken(type: .minus))
                 return
             }
             

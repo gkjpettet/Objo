@@ -18,7 +18,7 @@ public struct SubscriptParselet: InfixParselet {
         if !parser.check(.rsquare) {
             repeat {
                 indexes.append(try parser.expression())
-            } while !parser.match(.comma)
+            } while parser.match(.comma)
         }
         
         try parser.consume(.rsquare, message: "Expected a closing square brace after the indexes.")

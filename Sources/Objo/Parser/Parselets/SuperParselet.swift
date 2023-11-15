@@ -37,7 +37,7 @@ public struct SuperParselet: PrefixParselet {
             if !parser.check(.rparen) {
                 repeat {
                     arguments.append(try parser.expression())
-                } while !parser.match(.comma)
+                } while parser.match(.comma)
             }
             try parser.consume(.rparen, message: "Expected a closing parenthesis after the super constructor's arguments.")
         }
@@ -66,7 +66,7 @@ public struct SuperParselet: PrefixParselet {
             if !parser.check(.rparen) {
                 repeat {
                     arguments.append(try parser.expression())
-                } while !parser.match(.comma)
+                } while parser.match(.comma)
             }
             try parser.consume(.rparen, message: "Expected a closing parenthesis after the method call's arguments.")
         } else {

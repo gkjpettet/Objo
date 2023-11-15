@@ -17,7 +17,7 @@ public struct CallParselet: InfixParselet {
         if !parser.check(.rparen) {
             repeat {
                 arguments.append(try parser.expression())
-            } while !parser.match(.comma)
+            } while parser.match(.comma)
         }
         
         try parser.consume(.rparen, message: "Expected a closing parenthesis after the call's arguments.")

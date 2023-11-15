@@ -23,6 +23,10 @@ public struct LocalVariable {
     public init(identifier: Token, depth: Int = -1) {
         self.identifier = identifier
         self.depth = depth
+        
+        if identifier.lexeme == nil {
+            print("**NIL LEXEME**")
+        }
     }
     
 }

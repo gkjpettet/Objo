@@ -618,7 +618,7 @@ public class Parser {
         if !check(.rparen) {
             repeat {
                 parameters.append(try fetch(.identifier, message: "Expected parameter name."))
-            } while !match(.comma)
+            } while match(.comma)
         }
         
         try consume(.rparen, message: "Expected a closing parenthesis after the constructor's parameters.")
@@ -784,7 +784,7 @@ public class Parser {
         if !check(.rparen) {
             repeat {
                 parameters.append(try fetch(.identifier, message: "Expected parameter name."))
-            } while !match(.comma)
+            } while match(.comma)
         }
         
         if isSetter && parameters.count != 1 {
@@ -860,7 +860,7 @@ public class Parser {
         if !check(.rparen) {
             repeat {
                 params.append(try fetch(.identifier, message: "Expected parameter name."))
-            } while !match(.comma)
+            } while match(.comma)
         }
         
         try consume(.rparen, message: "Expected a closing parenthesis after the function parameters.")
@@ -936,7 +936,7 @@ public class Parser {
             if !check(.rparen) {
                 repeat {
                     parameters.append(try fetch(.identifier, message: "Expected parameter name."))
-                } while !match(.comma)
+                } while match(.comma)
             }
         }
         
@@ -978,7 +978,7 @@ public class Parser {
         if !check(.rparen) {
             repeat {
                 parameters.append(try fetch(.identifier, message: "Expected a parameter name."))
-            } while !match(.comma)
+            } while match(.comma)
         }
         
         // Closer after parameter/index(es).
@@ -1010,7 +1010,7 @@ public class Parser {
         // Check the correct number of parameters have been specified.
         if parameters.count == 0 {
             // Only overloadable unary operators may have zero parameters.
-            if Parser.overloadableUnaryOperators.contains(op.type) {
+            if !Parser.overloadableUnaryOperators.contains(op.type) {
                 try error(message: "`\(op.type)` is not an overloadable unary operator.")
             }
         } else if parameters.count > 1 && op.type != .lsquare {
@@ -1143,7 +1143,7 @@ public class Parser {
             var values: [Expr] = []
             repeat {
                 values.append(try expression())
-            } while !match(.comma)
+            } while match(.comma)
             
             ditch(.endOfLine)
             

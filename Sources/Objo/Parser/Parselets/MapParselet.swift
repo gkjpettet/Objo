@@ -23,7 +23,7 @@ public struct MapParselet: PrefixParselet {
                 } else {
                     keyValues.append(kv as! KeyValueExpr)
                 }
-            } while !parser.match(.comma)
+            } while parser.match(.comma)
         }
         
         // Permit an optional newline before the closing curly brace.
