@@ -11,7 +11,7 @@ public class Instance: MethodReceiver, Equatable, Hashable {
     // MARK: - Public properties
     
     /// This instance's fields. Lower indexes may be fields utilised by superclasses.
-    public var fields: [Value]
+    public var fields: [Value] = []
     
     /// If this is an instance of a foreign class, this is used to store any instance data. It's only accessed by the host application. The VM ignores it.
     public var foreignData: Any?
@@ -28,8 +28,10 @@ public class Instance: MethodReceiver, Equatable, Hashable {
         self.klass = klass
         self.name = self.klass.name + " instance"
         
-        // This instance's fields are initialised to `nothing`.
-        fields = Array(repeating: .instance(klass.vm.nothing!), count: klass.fieldCount)
+        // This instance's fields are initialised to `nothing` **unless** this is a nothing instance (which does not have fields).
+        if klass.name != "Nothing" {
+            fields = Array(repeating: .instance(klass.vm.nothing!), count: klass.fieldCount)
+        }
     }
     
     // MARK: - Equatable protocol

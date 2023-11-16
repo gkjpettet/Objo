@@ -763,8 +763,7 @@ public class VM {
             throw error(message: "The foreign class allocation callback for the Maths class has not yet been implemented.")
             
         case "Nothing":
-            // TODO: Implement
-            throw error(message: "The foreign class allocation callback for the Nothing class has not yet been implemented.")
+            return CoreNothing.allocate
             
         case "Number":
             // TODO: Implement
@@ -818,8 +817,7 @@ public class VM {
             throw error(message: "The foreign methods for the Maths class have not yet been implemented.")
             
         case "Nothing":
-            // TODO: Implement.
-            throw error(message: "The foreign methods for the Nothing class have not yet been implemented.")
+            return CoreNothing.bindForeignMethod(signature: signature, isStatic: isStatic)
             
         case "Number":
             // TODO: Implement.
@@ -1133,6 +1131,10 @@ public class VM {
             } else {
                 throw error(message: "Only instances have fields")
             }
+        }
+        
+        guard instance.klass != nothingClass else {
+            throw error(message: "The `nothing` class does not have fields.")
         }
         
         // Get the value of the field from the instance and push it on to the stack.
@@ -1551,6 +1553,10 @@ public class VM {
             } else {
                 throw error(message: "Only instances have fields.")
             }
+        }
+        
+        guard instance.klass != nothingClass else {
+            throw error(message: "You cannot set fields on `nothing`.")
         }
         
         // Set the field to the value on the top of the stack and pop it off.
