@@ -223,7 +223,7 @@ public class VM {
                 let message: String = pop().description
                 
                 // Pop the condition off the stack. If it's false then raise a runtime error.
-                if isFalsey(pop()) {
+                if VM.isFalsey(pop()) {
                     throw error(message: "Failed assertion: \(message)")
                 }
                 
@@ -436,14 +436,14 @@ public class VM {
             case .jumpIfFalse:
                 // Jump `offset` bytes from the current instruction pointer _if_ the value on the top of the stack is falsey.
                 let offset = readUInt16()
-                if isFalsey(peek(0)!) {
+                if VM.isFalsey(peek(0)!) {
                     currentFrame.ip += offset
                 }
                 
             case .jumpIfTrue:
                 // Jump `offset` bytes from the current instruction pointer _if_ the value on the top of the stack is truthy.
                 let offset = readUInt16()
-                if isTruthy(peek(0)!) {
+                if VM.isTruthy(peek(0)!) {
                     currentFrame.ip += offset
                 }
                 
@@ -497,7 +497,7 @@ public class VM {
             case .logicalXor:
                 let b = pop()
                 let a = pop()
-                push(.boolean(isTruthy(a) != isTruthy(b)))
+                push(.boolean(VM.isTruthy(a) != VM.isTruthy(b)))
                 
             case .loop:
                 // Unconditionally jump the specified offset back from the current instruction pointer.
@@ -764,8 +764,7 @@ public class VM {
             return CoreNothing.allocate
             
         case "Number":
-            // TODO: Implement
-            throw error(message: "The foreign class allocation callback for the Number class has not yet been implemented.")
+            return CoreNumber.allocate
             
         case "Object":
             return CoreObject.allocate
@@ -775,8 +774,7 @@ public class VM {
             throw error(message: "The foreign class allocation callback for the Random class has not yet been implemented.")
             
         case "String":
-            // TODO: Implement
-            throw error(message: "The foreign class allocation callback for the String class has not yet been implemented.")
+            return CoreString.allocate
             
         case "System":
             // TODO: Implement
@@ -817,8 +815,7 @@ public class VM {
             return CoreNothing.bindForeignMethod(signature: signature, isStatic: isStatic)
             
         case "Number":
-            // TODO: Implement.
-            throw error(message: "The foreign methods for the Number class have not yet been implemented.")
+            return CoreNumber.bindForeignMethod(signature: signature, isStatic: isStatic)
             
         case "Object":
             return CoreObject.bindForeignMethod(signature: signature, isStatic: isStatic)
@@ -828,8 +825,7 @@ public class VM {
             throw error(message: "The foreign methods for the Random class have not yet been implemented.")
             
         case "String":
-            // TODO: Implement.
-            throw error(message: "The foreign methods for the String class have not yet been implemented.")
+            return CoreString.bindForeignMethod(signature: signature, isStatic: isStatic)
             
         case "System":
             // TODO: Implement.
@@ -1263,40 +1259,6 @@ public class VM {
         }
     }
     
-    /// Returns true if `v` is considered "falsey".
-    ///
-    /// Objo considers the boolean value `false` and the Objo value `nothing` to
-    /// be false, everything else is true.
-    private func isFalsey(_ value: Value) -> Bool {
-        switch value {
-        case .instance(let instance):
-            return instance.klass.name == "Nothing"
-            
-        case .boolean(let b):
-            return !b
-            
-        default:
-            return false
-        }
-    }
-    
-    /// Returns True if `value` is *not* considered "falsey".
-    ///
-    /// Objo considers the boolean value `false` and the Objo value `nothing` to
-    /// be false, everything else is true.
-    private func isTruthy(_ value: Value) -> Bool {
-        switch value {
-        case .boolean(let b):
-            return b
-            
-        case .instance(let i):
-            return i.klass.name != "Nothing"
-            
-        default:
-            return true
-        }
-    }
-    
     /// Handles the `inherit` instruction.
     ///
     /// The compiler ensures that the stack looks like this when a class declaration specifies
@@ -1706,5 +1668,41 @@ public class VM {
         // Call the correct method.
         // The compiler will have guaranteed that the superclass has a method with this signature.
         try callValue(superclass.methods[signature]!, argCount: argCount)
+    }
+    
+    // MARK: - Static methods
+    
+    /// Returns true if `v` is considered "falsey".
+    ///
+    /// Objo considers the boolean value `false` and the Objo value `nothing` to
+    /// be false, everything else is true.
+    public static func isFalsey(_ value: Value) -> Bool {
+        switch value {
+        case .instance(let instance):
+            return instance.klass.name == "Nothing"
+            
+        case .boolean(let b):
+            return !b
+            
+        default:
+            return false
+        }
+    }
+    
+    /// Returns True if `value` is *not* considered "falsey".
+    ///
+    /// Objo considers the boolean value `false` and the Objo value `nothing` to
+    /// be false, everything else is true.
+    public static func isTruthy(_ value: Value) -> Bool {
+        switch value {
+        case .boolean(let b):
+            return b
+            
+        case .instance(let i):
+            return i.klass.name != "Nothing"
+            
+        default:
+            return true
+        }
     }
 }
