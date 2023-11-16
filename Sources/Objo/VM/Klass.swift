@@ -13,7 +13,7 @@ public class Klass: MethodReceiver, Equatable, Hashable {
     
     /// If this is a foreign class, this is the optional callback to call when the class is instantiated.
     /// (VM, the instance being instantiated as a Value, the arguments to the constructor)
-    public var foreignInstantiate: ((VM, inout Value, [Value]) -> Void)?
+    public var foreignInstantiate: ((VM, Instance, [Value]) throws -> Void)?
     
     // MARK: - Public properties
     

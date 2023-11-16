@@ -44,4 +44,30 @@ public enum Value: CustomStringConvertible, Hashable {
             return s
         }
     }
+    
+    /// Returns the type (class name) of this value. Will be nil for bound and foreign methods.
+    public var type: String? {
+        switch self {
+        case .boolean:
+            return "Boolean"
+            
+        case .boundMethod, .foreignMethod:
+            return nil
+            
+        case .function:
+            return "Function"
+            
+        case .instance(let instance):
+            return instance.klass.name
+            
+        case .klass(let klass):
+            return klass.name
+            
+        case .number:
+            return "Number"
+            
+        case .string:
+            return "String"
+        }
+    }
 }

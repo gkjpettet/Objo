@@ -30,13 +30,4 @@ final class VMTests: XCTestCase {
             XCTFail("VM runtime error: \(ve.pretty)")
         }
     }
-//    
-//    func testSimpleAddition() throws {
-//        let f = try compiler.compile(source: "1 + 2", debugMode: true, scriptID: 0)
-//        do {
-//            try vm.interpret(function: f)
-//        } catch {
-//            print(error)
-//        }
-//    }
 }

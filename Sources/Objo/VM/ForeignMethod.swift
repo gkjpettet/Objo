@@ -15,7 +15,7 @@ public struct ForeignMethod: Method, Equatable, Hashable {
     public let arity: Int
     
     /// The native callback to invoke when this foreign method is called.
-    public let method: (VM) -> Void
+    public let method: (VM) throws -> Void
     
     /// This foreign method's signature.
     public let signature: String
@@ -23,7 +23,7 @@ public struct ForeignMethod: Method, Equatable, Hashable {
     /// A string representation of this foreign method.
     public var stringValue: String { return "foreign \(signature)" }
     
-    public init(signature: String, arity: Int, uuid: UUID, method: @escaping (VM) -> Void) {
+    public init(signature: String, arity: Int, uuid: UUID, method: @escaping (VM) throws -> Void) {
         self.signature = signature
         self.arity = arity
         self.id = uuid

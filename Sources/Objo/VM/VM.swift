@@ -24,11 +24,11 @@ public class VM {
     /// The function that is called when defining a foreign class. The host should return the callback to use when a new class
     /// is instantiated.
     /// name of the class -> (VM, the instance being instantiated as a Value, the arguments to the constructor)
-    public var bindForeignClass: ((String) -> (VM, inout Value, [Value]) -> Void)?
+    public var bindForeignClass: ((String) -> (VM, Instance, [Value]) throws -> Void)?
     
     /// The function that is called when defining a foreign method. The host should return the callback to use whenever that foreign method is called. The signature for that callback always takes the VM as the argument and returns Void.
     // (className, signature, isStatic) -> (VM) -> Void
-    public var bindForeignMethod: ((String, String, Bool) -> ((VM) -> Void))?
+    public var bindForeignMethod: ((String, String, Bool) -> ((VM) throws -> Void))?
     
     /// The function that is called when the VM has finished execution.
     public var finished: (() -> Void)?
@@ -55,7 +55,7 @@ public class VM {
     // MARK: - Private properties
     
     /// A reference to the built-in Boolean class. Will be nil whilst bootstrapping.
-    private var booleanClass: Klass?
+    private(set) var booleanClass: Klass?
 
     /// Returns the chunk we're currently reading from.
     /// It's owned by the function whose call frame we're currently in.
@@ -81,7 +81,7 @@ public class VM {
     private var _isRunning = false
     
     /// A reference to the built-in KeyValue class. Will be nil whilst bootstrapping.
-    private var keyValueClass: Klass?
+    private(set) var keyValueClass: Klass?
     
     /// The call frame during the previous instruction. Used by the debugger.
     private var lastInstructionFrame: CallFrame?
@@ -93,13 +93,13 @@ public class VM {
     private var lastStoppedScriptId: Int = -1
     
     /// A reference to the built-in List class. Will be nil whilst bootstrapping.
-    private var listClass: Klass?
+    private(set) var listClass: Klass?
     
     /// A reference to the built-in Nothing class. Will be nil whilst bootstrapping.
-    private var nothingClass: Klass?
+    private(set) var nothingClass: Klass?
     
     /// A reference to the built-in Number class. Will be nil whilst bootstrapping.
-    private var numberClass: Klass?
+    private(set) var numberClass: Klass?
     
     /// The singleton Random instance. Will be nil until first accessed through `Maths.random()`.
     private var randomInstance: Instance?
@@ -116,7 +116,7 @@ public class VM {
     private var stackTop: Int = 0
     
     /// A reference to the built-in String class. Will be nil whilst bootstrapping.
-    private var stringClass: Klass?
+    private(set) var stringClass: Klass?
     
     // MARK: - Public methods
     
@@ -698,6 +698,27 @@ public class VM {
         }
     }
     
+    /// Forces the VM to raise a runtime error at the current IP with the passed message.
+    public func runtimeError(message: String) throws {
+        throw error(message: message)
+    }
+    
+    // MARK: - Public API
+    
+    /// Returns the value in the specified index in the slot array.
+    public func getSlot(_ index: Int) -> Value {
+        return slots[index]!
+    }
+    
+    /// Sets the return value of a foreign method to the specified value.
+    
+    /// If you want to return `nothing` from a method you don't need to call this.
+    /// Before a foreign method is called the VM has cleared the call frame stack and pushed nothing on to it.
+    /// Setting a return value just requires us to replace the pushed nothing object with `value`.
+    public func setReturn(_ value: Value) {
+        stack[stackTop - 1] = value
+    }
+    
     // MARK: - Private methods
     
     /// Adds a named field to the class on the top of the stack.
@@ -713,12 +734,68 @@ public class VM {
         klass.fields[fieldIndex] = fieldName
     }
     
+    /// The VM is requesting the callback to use when instantiating a new foreign class.
+    /// This method is called when the host application failed to provide one.
+    /// We check our standard libraries.
+    ///
+    /// Returns `nil` if none defined.
+    private func bindCoreForeignClass(className: String) throws -> ((VM, Instance, [Value]) throws -> Void)? {
+        // TODO: Implement
+        switch className {
+        case "Boolean":
+            // TODO: Implement
+            throw error(message: "The foreign class allocation callback for the Boolean class has not yet been implemented.")
+            
+        case "KeyValue":
+            // TODO: Implement
+            throw error(message: "The foreign class allocation callback for the KeyValue class has not yet been implemented.")
+            
+        case "List":
+            // TODO: Implement
+            throw error(message: "The foreign class allocation callback for the List class has not yet been implemented.")
+            
+        case "Map":
+            // TODO: Implement
+            throw error(message: "The foreign class allocation callback for the Map class has not yet been implemented.")
+            
+        case "Maths":
+            // TODO: Implement
+            throw error(message: "The foreign class allocation callback for the Maths class has not yet been implemented.")
+            
+        case "Nothing":
+            // TODO: Implement
+            throw error(message: "The foreign class allocation callback for the Nothing class has not yet been implemented.")
+            
+        case "Number":
+            // TODO: Implement
+            throw error(message: "The foreign class allocation callback for the Number class has not yet been implemented.")
+            
+        case "Object":
+            return CoreObject.allocate
+            
+        case "Random":
+            // TODO: Implement
+            throw error(message: "The foreign class allocation callback for the Random class has not yet been implemented.")
+            
+        case "String":
+            // TODO: Implement
+            throw error(message: "The foreign class allocation callback for the String class has not yet been implemented.")
+            
+        case "System":
+            // TODO: Implement
+            throw error(message: "The foreign class allocation callback for the System class has not yet been implemented.")
+            
+        default:
+            return nil
+        }
+    }
+    
     /// The VM is requesting the callback to use when calling the specified foreign method on a class.
     /// The host application will have failed to provide one.
     /// We check our standard libraries.
     ///
     /// Returns `nil` if none defined.
-    private func bindCoreForeignMethod(className: String, signature: String, isStatic: Bool) throws -> ((VM) -> Void)? {
+    private func bindCoreForeignMethod(className: String, signature: String, isStatic: Bool) throws -> ((VM) throws -> Void)? {
         switch className {
         case "Boolean":
             // TODO: Implement.
@@ -749,8 +826,7 @@ public class VM {
             throw error(message: "The foreign methods for the Number class have not yet been implemented.")
             
         case "Object":
-            // TODO: Implement.
-            throw error(message: "The foreign methods for the Object class have not yet been implemented.")
+            return CoreObject.bindForeignMethod(signature: signature, isStatic: isStatic)
             
         case "Random":
             // TODO: Implement.
@@ -800,7 +876,11 @@ public class VM {
             for i in 1...argCount {
                 arguments.append(stack[stackBase + i]!)
             }
-            klass.foreignInstantiate?(self, &stack[stackBase]!, arguments)
+            
+            guard case .instance(let instance) = stack[stackBase] else {
+                throw error(message: "Expected an instance on the stack at the stack base.")
+            }
+            try klass.foreignInstantiate?(self, instance, arguments)
         }
         
         // Invoke the constructor if defined.
@@ -834,7 +914,7 @@ public class VM {
         push(.instance(nothing!))
         
         // Call the foreign method.
-        fm.method(self)
+        try fm.method(self)
     }
     
     /// Calls a compiled function.
@@ -926,7 +1006,7 @@ public class VM {
         
         if klass.foreignInstantiate == nil {
             // The host isn't aware of this class. Check if the core libraries have a callback for it.
-            klass.foreignInstantiate = bindForeignClass?(klass.name)
+            klass.foreignInstantiate = try bindCoreForeignClass(className: klass.name)
             if klass.foreignInstantiate == nil {
                 throw error(message: "There is no foreign class instantiation callback for `\(klass.name)`.")
             }
@@ -1017,6 +1097,14 @@ public class VM {
     /// pop it off for us momentarily.
     private func defineNothing() {
         nothing = Nothing(klass: nothingClass!)
+        // When the VM started we had to initialise the stack with nil values (since `nothing` had not yet
+        // been defined). Let's fix that now by replacing any nil entries in the stack with nothing.
+        // We should only ever have to do this once (when nothing is defined in the core library).
+        for i in 0...stack.count - 1 {
+            if stack[i] == nil {
+                stack[i] = .instance(nothing!)
+            }
+        }
     }
     
     /// Returns a VMError at the current IP (unless otherwise specified).
