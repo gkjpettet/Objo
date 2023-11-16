@@ -8,7 +8,7 @@
 
 import Foundation
 
-public struct CoreNothing {
+public struct CoreNothing: CoreType {
     /// The user is calling the `Nothing` class constructor.
     public static func allocate(vm: VM, instance: Instance, arguments: [Value]) throws {
         try vm.runtimeError(message: "The Nothing class does not have a constructor.")

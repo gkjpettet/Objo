@@ -740,11 +740,9 @@ public class VM {
     ///
     /// Returns `nil` if none defined.
     private func bindCoreForeignClass(className: String) throws -> ((VM, Instance, [Value]) throws -> Void)? {
-        // TODO: Implement
         switch className {
         case "Boolean":
-            // TODO: Implement
-            throw error(message: "The foreign class allocation callback for the Boolean class has not yet been implemented.")
+            return CoreBoolean.allocate
             
         case "KeyValue":
             // TODO: Implement
@@ -797,8 +795,7 @@ public class VM {
     private func bindCoreForeignMethod(className: String, signature: String, isStatic: Bool) throws -> ((VM) throws -> Void)? {
         switch className {
         case "Boolean":
-            // TODO: Implement.
-            throw error(message: "The foreign methods for the Boolean class have not yet been implemented.")
+            return CoreBoolean.bindForeignMethod(signature: signature, isStatic: isStatic)
             
         case "KeyValue":
             // TODO: Implement.

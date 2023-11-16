@@ -8,7 +8,7 @@
 
 import Foundation
 
-public struct CoreObject {
+public struct CoreObject: CoreType {
     
     // MARK: - Public static functions
     
