@@ -56,7 +56,7 @@ public final class Objo {
         }
         
         // Simple case with no arguments.
-        if arity == 0 { return "\(name) ()" }
+        if arity == 0 { return "\(name)()" }
         
         // Build the signature.
         var sig: [String] = [name]
