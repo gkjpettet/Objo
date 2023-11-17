@@ -80,11 +80,97 @@ public struct CoreString: CoreType {
     /// `String.+(other) -> string`
     private static func add(vm: VM) throws {
         guard case .string(let this) = vm.getSlot(0) else {
-            // Shouldn't even happen...
+            // Shouldn't ever happen...
             try vm.runtimeError(message: "Expected a string in slot 0.")
+            return
         }
         
         vm.setReturn(.string(this + vm.getSlot(1).description))
+    }
+    
+    /// Returns true if `other` is a substring of this string. Case-sensitive comparison.
+    ///
+    /// Assumes:
+    /// - Slot 0 is a string
+    /// - Slot 1 is a string.
+    /// `String.contains(other) -> boolean`
+    private static func contains(vm: VM) throws {
+        guard case .string(let this) = vm.getSlot(0) else {
+            // Shouldn't ever happen...
+            try vm.runtimeError(message: "Expected a string in slot 0.")
+            return
+        }
+        
+        guard case .string(let other) = vm.getSlot(1) else {
+            try vm.runtimeError(message: "The argument must be a string.")
+            return
+        }
+        
+        vm.setReturn(.boolean(this.contains(other)))
+    }
+    
+    /// Returns the number of characters in the string.
+    ///
+    /// `String.count() -> number`
+    private static func count(vm: VM) throws {
+        guard case .string(let this) = vm.getSlot(0) else {
+            // Shouldn't ever happen...
+            try vm.runtimeError(message: "Expected a string in slot 0.")
+            return
+        }
+        
+        vm.setReturn(.number(Double(this.count)))
+    }
+    
+    /// Returns `true` if this string ends with `suffix`. **Case sensitive**.
+    ///
+    /// Assumes:
+    /// - Slot 0 is a string
+    /// - Slot 1 is a string.
+    ///
+    /// `String.endsWith(suffix) -> boolean`
+    private static func endsWith(vm: VM) throws {
+        guard case .string(let this) = vm.getSlot(0) else {
+            // Shouldn't ever happen...
+            try vm.runtimeError(message: "Expected a string in slot 0.")
+            return
+        }
+        
+        guard case .string(let suffix) = vm.getSlot(1) else {
+            try vm.runtimeError(message: "The argument must be a string.")
+            return
+        }
+        
+        vm.setReturn(.boolean(this.hasSuffix(suffix)))
+    }
+    
+    /// Returns `true` if this string ends with `suffix`. The `caseSensitive` argument determines case-sensitivity.
+    ///
+    /// Assumes:
+    /// - Slot 0 is a string
+    /// - Slot 1 is a string.
+    /// - Slot 2 is the `caseSensitive` argument
+    ///
+    /// `String.endsWith(suffix, caseSensitive) -> boolean`
+    private static func endsWithCaseSensitivity(vm: VM) throws  {
+        guard case .string(let this) = vm.getSlot(0) else {
+            // Shouldn't ever happen...
+            try vm.runtimeError(message: "Expected a string in slot 0.")
+            return
+        }
+        
+        guard case .string(let suffix) = vm.getSlot(1) else {
+            try vm.runtimeError(message: "The argument must be a string.")
+            return
+        }
+        
+        if VM.isTruthy(vm.getSlot(2)) {
+            // Case sensitive.
+            vm.setReturn(.boolean(this.hasSuffix(suffix)))
+        } else {
+            // Case insensitive.
+            vm.setReturn(.boolean(this.lowercased().hasSuffix(suffix.lowercased())))
+        }
     }
     
     /// Returns a new string containing the UTF-8 encoding of `codepoint`.
@@ -248,6 +334,19 @@ public struct CoreString: CoreType {
         vm.setReturn(.number(Double(this.indexOf(substring: other, from: start, caseSensitive: VM.isTruthy(vm.getSlot(3))))))
     }
     
+    /// Returns a lowercase version of this string.
+    ///
+    /// `String.lowercase() -> string`
+    private static func lowercase(vm: VM) throws {
+        guard case .string(let this) = vm.getSlot(0) else {
+            // This shouldn't happen...
+            try vm.runtimeError(message: "Expected a string in slot 0.")
+            return
+        }
+        
+        vm.setReturn(.string(this.lowercased()))
+    }
+    
     /// Returns the a portion of this string beginning at index `start` until the end of the string.
     ///
     /// Assumes:
@@ -315,5 +414,99 @@ public struct CoreString: CoreType {
         } catch ObjoError.invalidArgument {
             try vm.runtimeError(message: "Invalid arguments to `String.middle(start, length)`.")
         }
+    }
+    
+    /// Returns a new string that contains this string repeated `count` times.
+    ///
+    ///
+    /// Assumes:
+    /// - Slot 0 is a string
+    /// - Slot 1 is the `count` argument.
+    ///
+    /// `String.*(count) -> string`
+    private static func multiply(vm: VM) throws {
+        guard case .string(let this) = vm.getSlot(0) else {
+            // This shouldn't happen...
+            try vm.runtimeError(message: "Expected a string in slot 0.")
+        }
+        
+        // It's a runtime error if count is not a positive integer.
+        guard case .number(let count) = vm.getSlot(1) else {
+            try vm.runtimeError(message: "The `String.*(_)` method expects a positive integer argument.")
+        }
+        
+        guard let count = Int(exactly: count) else {
+            try vm.runtimeError(message: "The `String.*(_)` method expects a positive integer argument.")
+        }
+        
+        guard count >= 0 else {
+            try vm.runtimeError(message: "The `String.*(_)` method expects a positive integer argument.")
+        }
+        
+        vm.setReturn(.string(String(repeating: this, count: count)))
+    }
+    
+    /// Returns `true` if this string starts with `prefix`. **Case sensitive**.
+    ///
+    /// Assumes:
+    /// - Slot 0 is a string
+    /// - Slot 1 is a string.
+    ///
+    /// `String.startsWith(prefix) -> boolean`
+    private static func startsWith(vm: VM) throws {
+        guard case .string(let this) = vm.getSlot(0) else {
+            // Shouldn't ever happen...
+            try vm.runtimeError(message: "Expected a string in slot 0.")
+            return
+        }
+        
+        guard case .string(let prefix) = vm.getSlot(1) else {
+            try vm.runtimeError(message: "The argument must be a string.")
+            return
+        }
+        
+        vm.setReturn(.boolean(this.hasPrefix(prefix)))
+    }
+    
+    /// Returns `true` if this string starts with `prefix`. The `caseSensitive` argument determines case-sensitivity.
+    ///
+    /// Assumes:
+    /// - Slot 0 is a string
+    /// - Slot 1 is a string.
+    /// - Slot 2 is the `caseSensitive` argument
+    ///
+    /// `String.startsWith(prefix, caseSensitive) -> boolean`
+    private static func startsWithCaseSensitivity(vm: VM) throws  {
+        guard case .string(let this) = vm.getSlot(0) else {
+            // Shouldn't ever happen...
+            try vm.runtimeError(message: "Expected a string in slot 0.")
+            return
+        }
+        
+        guard case .string(let prefix) = vm.getSlot(1) else {
+            try vm.runtimeError(message: "The argument must be a string.")
+            return
+        }
+        
+        if VM.isTruthy(vm.getSlot(2)) {
+            // Case sensitive.
+            vm.setReturn(.boolean(this.hasPrefix(prefix)))
+        } else {
+            // Case insensitive.
+            vm.setReturn(.boolean(this.lowercased().hasPrefix(prefix.lowercased())))
+        }
+    }
+    
+    /// Returns an uppercase version of this string.
+    ///
+    /// `String.uppercase() -> string`
+    private static func uppercase(vm: VM) throws {
+        guard case .string(let this) = vm.getSlot(0) else {
+            // This shouldn't happen...
+            try vm.runtimeError(message: "Expected a string in slot 0.")
+            return
+        }
+        
+        vm.setReturn(.string(this.uppercased()))
     }
 }
