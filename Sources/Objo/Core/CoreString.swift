@@ -71,6 +71,22 @@ public struct CoreString: CoreType {
     
     // MARK: - Private methods
     
+    /// Concatenates this string with the argument in slot 1 and returns the result.
+    ///
+    /// Assumes:
+    /// - Slot 0 is a string
+    /// - Slot 1 is value to append.
+    ///
+    /// `String.+(other) -> string`
+    private static func add(vm: VM) throws {
+        guard case .string(let this) = vm.getSlot(0) else {
+            // Shouldn't even happen...
+            try vm.runtimeError(message: "Expected a string in slot 0.")
+        }
+        
+        vm.setReturn(.string(this + vm.getSlot(1).description))
+    }
+    
     /// Returns a new string containing the UTF-8 encoding of `codepoint`.
     ///
     /// Expects slot 1 is an integer number.
