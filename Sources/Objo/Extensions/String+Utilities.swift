@@ -87,4 +87,18 @@ extension String {
         let endIndex = self.index(startIndex, offsetBy: length)
         return String(self[startIndex..<endIndex])
     }
+    
+    /// Removes trailing whitespace from a string.
+    /// 
+    /// Credit: https://stackoverflow.com/a/59238738/278816
+    @inline(__always)
+    var trailingSpacesTrimmed: Self.SubSequence {
+        var view = self[...]
+
+        while view.last?.isWhitespace == true {
+            view = view.dropLast()
+        }
+
+        return view
+    }
 }

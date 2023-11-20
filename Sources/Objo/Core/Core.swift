@@ -210,7 +210,6 @@ public struct Core {
     foreign +(other)
     foreign *(count)
     foreign [index]
-    foreign codePoints()
     foreign contains(other)
     foreign count()
     foreign endsWith(suffix)
@@ -232,11 +231,8 @@ public struct Core {
     foreign startsWith(prefix, caseSensitive)
     foreign titlecase()
     foreign trim()
-    foreign trim(chars)
     foreign trimEnd()
-    foreign trimEnd(chars)
     foreign trimStart()
-    foreign trimStart(chars)
     foreign uppercase()
     }
 

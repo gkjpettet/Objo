@@ -29,7 +29,7 @@ public struct CoreNumber: CoreType {
         "atan()"        : atan_,
         "ceil()"        : ceil_,
         "cos()"         : cos_,
-        "expr()"        : exp_,
+        "exp()"        : exp_,
         "floor()"       : floor_,
         "log()"         : log_,
         "isInteger()"   : isInteger,
@@ -106,6 +106,7 @@ public struct CoreNumber: CoreType {
         guard case .number(let this) = vm.getSlot(0) else {
             // This should never happen...
             try vm.runtimeError(message: "Expected a Number in slot 0.")
+            return
         }
         
         vm.setReturn(.string(String(this) + vm.getSlot(1).description))
@@ -206,10 +207,12 @@ public struct CoreNumber: CoreType {
     private static func fromString(vm: VM) throws {
         guard case .string(let value) = vm.getSlot(1) else {
             try vm.runtimeError(message: "Expected a string argument to `Number.fromString(_)`.")
+            return
         }
         
         guard let result = Double(value) else {
             try vm.runtimeError(message: "`value` cannot be parsed into a number.")
+            return
         }
         
         vm.setReturn(.number(result))
@@ -360,7 +363,7 @@ public struct CoreNumber: CoreType {
     /// Since this is a built-in type, slot 0 will be a double.
     /// `Number ..< upper -> List`
     private static func rangeExclusive(vm: VM) throws {
-        guard case .number(var lower) = vm.getSlot(0) else {
+        guard case .number(let lower) = vm.getSlot(0) else {
             // This should never happen...
             try vm.runtimeError(message: "Expected a number in slot 0.")
             return
@@ -378,7 +381,7 @@ public struct CoreNumber: CoreType {
         } else {
             if upper > lower {
                 upper -= 1
-                var value = lower
+                let value = lower
                 while value <= upper {
                     values.append(.number(value))
                 }
@@ -393,7 +396,7 @@ public struct CoreNumber: CoreType {
         }
         
         // Return a new list with the computed values.
-        vm.setReturn(vm.newList(items: values))
+        vm.setReturn(.instance(vm.newList(items: values)))
     }
     
     /// Returns a list with elements ranging from this number to `upper` (inclusive).
@@ -401,14 +404,14 @@ public struct CoreNumber: CoreType {
     /// Since this is a built-in type, slot 0 will be a double.
     /// `Number...upper -> List`
     private static func rangeInclusive(vm: VM) throws {
-        guard case .number(var lower) = vm.getSlot(0) else {
+        guard case .number(let lower) = vm.getSlot(0) else {
             // This should never happen...
             try vm.runtimeError(message: "Expected a number in slot 0.")
             return
         }
         
         // Assert that the upper argument is a number.
-        guard case .number(var upper) = vm.getSlot(1) else {
+        guard case .number(let upper) = vm.getSlot(1) else {
             try vm.runtimeError(message: "The upper bounds must be a number.")
             return
         }
@@ -431,7 +434,7 @@ public struct CoreNumber: CoreType {
         }
         
         // Return a new list with the computed values.
-        vm.setReturn(vm.newList(items: values))
+        vm.setReturn(.instance(vm.newList(items: values)))
     }
     
     /// Returns the value rounded to the nearest integer.

@@ -134,6 +134,13 @@ public class VM {
         try run()
     }
     
+    /// Creates and returns a new List instance with the optional items.
+    public func newList(items: [Value]?) -> Instance {
+        let list = Instance(klass: listClass!)
+        list.foreignData = ListData(items: items)
+        return list
+    }
+    
     /// Resets the virtual machine.
     public func reset() {
         _isRunning = false
