@@ -69,7 +69,7 @@ public struct CoreList: CoreType {
     ///
     /// `List.add(item) -> item`
     private static func add(vm: VM) throws {
-        guard case .instance(var list) = vm.getSlot(0) else {
+        guard case .instance(let list) = vm.getSlot(0) else {
             try vm.runtimeError(message: "Expected a List instance in slot 0.")
             return
         }
@@ -83,7 +83,7 @@ public struct CoreList: CoreType {
     ///
     /// `List.clear() -> nothing`
     private static func clear(vm: VM) throws {
-        guard case .instance(var list) = vm.getSlot(0) else {
+        guard case .instance(let list) = vm.getSlot(0) else {
             try vm.runtimeError(message: "Expected a List instance in slot 0.")
             return
         }
@@ -97,7 +97,7 @@ public struct CoreList: CoreType {
     ///
     /// `List.clone() -> List`
     private static func clone(vm: VM) throws {
-        guard case .instance(var list) = vm.getSlot(0) else {
+        guard case .instance(let list) = vm.getSlot(0) else {
             try vm.runtimeError(message: "Expected a List instance in slot 0.")
             return
         }
@@ -108,7 +108,7 @@ public struct CoreList: CoreType {
     /// Returns a shallow clone of `list`.
     /// Assumes `list` is a List instance.
     private static func cloneList(list: Instance, vm: VM) -> Instance {
-        var data: ListData = list.foreignData as! ListData
+        let data: ListData = list.foreignData as! ListData
         
         var clonedItems: [Value] = []
         for item in data.items {
@@ -124,12 +124,42 @@ public struct CoreList: CoreType {
     ///
     /// `List.count() -> count`
     private static func count(vm: VM) throws {
-        guard case .instance(var list) = vm.getSlot(0) else {
+        guard case .instance(let list) = vm.getSlot(0) else {
             try vm.runtimeError(message: "Expected a List instance in slot 0.")
             return
         }
         
         vm.setReturn(.number(Double((list.foreignData as! ListData).count)))
+    }
+    
+    /// Creates a new list with `size` elements, all set to `element`.
+    ///
+    /// Setup:
+    /// - Slot 0 is the List class.
+    /// - Slot 1 should be a non-negative integer (runtime error otherwise).
+    /// - Slot 2 is the element to replicate.
+    ///
+    /// `List.filled(size, element) -> List instance`
+    private static func filled(vm: VM) throws {
+        guard case .number(let size) = vm.getSlot(1) else {
+            try vm.runtimeError(message: "`size` must be an integer.")
+            return
+        }
+        
+        guard let size = Int(exactly: size) else {
+            try vm.runtimeError(message: "`size` must be an integer.")
+            return
+        }
+        
+        guard size >= 0 else {
+            try vm.runtimeError(message: "`size` cannot be negative.")
+            return
+        }
+        
+        let element = vm.getSlot(2)
+        let items: [Value] = Array(repeating: element, count: size)
+        
+        vm.setReturn(.instance(vm.newList(items: items)))
     }
     
     /// Returns the index of `value` in the list, if found. If not found it returns `-1`.
@@ -140,7 +170,7 @@ public struct CoreList: CoreType {
     ///
     /// `List.indexOf(value) -> number`
     private static func indexOf(vm: VM) throws {
-        guard case .instance(var list) = vm.getSlot(0) else {
+        guard case .instance(let list) = vm.getSlot(0) else {
             try vm.runtimeError(message: "Expected a List instance in slot 0.")
             return
         }
@@ -166,21 +196,22 @@ public struct CoreList: CoreType {
     ///
     /// If `index` is not an integer or is out of bounds, a runtime error occurs.
     private static func insert(vm: VM) throws {
-        guard case .instance(var list) = vm.getSlot(0) else {
+        guard case .instance(let list) = vm.getSlot(0) else {
             try vm.runtimeError(message: "Expected a List instance in slot 0.")
             return
         }
         
-        var data: ListData = list.foreignData as! ListData
+        let data: ListData = list.foreignData as! ListData
         
         // Get `index` and assert it's an integer.
-        guard case .number(var index) = vm.getSlot(1) else {
+        guard case .number(let index) = vm.getSlot(1) else {
             try vm.runtimeError(message: "`index` must be an integer.")
             return
         }
         
         guard var index = Int(exactly: index) else {
             try vm.runtimeError(message: "`index` must be an integer.")
+            return
         }
         
         let value = vm.getSlot(2)
@@ -210,6 +241,92 @@ public struct CoreList: CoreType {
         vm.setReturn(value)
     }
     
+    /// Returns false if there are no more items to iterate or returns the index in the array
+    /// of the next value in the list.
+    ///
+    /// if `iter` is nothing then we should return the first index.
+    /// Assumes slot 0 contains a List instance.
+    ///
+    /// `List.iterate(iter) -> value or false`
+    private static func iterate(vm: VM) throws {
+        guard case .instance(let list) = vm.getSlot(0) else {
+            try vm.runtimeError(message: "Expected a List instance in slot 0.")
+            return
+        }
+        
+        let data: ListData = list.foreignData as! ListData
+        
+        let iter = vm.getSlot(1)
+        
+        switch iter {
+        case .instance(let iterInstance):
+            if iterInstance.klass.name == "Nothing" {
+                // Return the index of the first item or false if the list is empty.
+                if data.count == 0 {
+                    vm.setReturn(.boolean(false))
+                    return
+                } else {
+                    vm.setReturn(.number(0))
+                    return
+                }
+            }
+            
+        case .number(let iterNumber):
+            guard let iterInt = Int(exactly: iterNumber) else {
+                try vm.runtimeError(message: "The iterator must be an integer.")
+                return
+            }
+            
+            // Return the next index unless we've reached the end of the array when we return false.
+            if iterInt < 0 || iterInt >= data.lastIndex {
+                vm.setReturn(.boolean(false))
+                return
+            } else {
+                vm.setReturn(.number(Double(iterInt + 1)))
+                return
+            }
+            
+        default:
+            try vm.runtimeError(message: "The iterator must be an integer.")
+            return
+        }
+    }
+    
+    /// Returns the next iterator value.
+    ///
+    /// Assumes:
+    /// - Slot 0 is a List instance.
+    /// - Slot 1 is an integer.
+    ///
+    /// Uses `iter` to determine the next value in the iteration. It should be an index in the array.
+    ///
+    /// `List.iteratorValue(iter) -> value`
+    private static func iteratorValue(vm: VM) throws {
+        guard case .instance(let list) = vm.getSlot(0) else {
+            try vm.runtimeError(message: "Expected a List instance in slot 0.")
+            return
+        }
+        
+        let data: ListData = list.foreignData as! ListData
+        
+        guard case .number(let iter) = vm.getSlot(1) else {
+            try vm.runtimeError(message: "The iteratorm must be an integer.")
+            return
+        }
+        
+        guard let index = Int(exactly: iter) else {
+            try vm.runtimeError(message: "The iteratorm must be an integer.")
+            return
+        }
+        
+        if index < 0 || index  > data.lastIndex {
+            try vm.runtimeError(message: "The iterator is out of bounds.")
+            return
+        }
+        
+        vm.setReturn(data.items[index])
+    }
+    
     /// Pops the highest index item off the list and returns it.
     /// It's a runtime error if the list is empty.
     ///
@@ -218,12 +335,12 @@ public struct CoreList: CoreType {
     ///
     /// `List.pop() -> item`
     private static func pop(vm: VM) throws {
-        guard case .instance(var list) = vm.getSlot(0) else {
+        guard case .instance(let list) = vm.getSlot(0) else {
             try vm.runtimeError(message: "Expected a List instance in slot 0.")
             return
         }
         
-        var data: ListData = list.foreignData as! ListData
+        let data: ListData = list.foreignData as! ListData
         
         if data.count == 0 {
             try vm.runtimeError(message: "Cannot pop an empty list.")
@@ -243,12 +360,12 @@ public struct CoreList: CoreType {
     ///
     /// `List.remove(value) -> value or nothing`
     private static func remove(vm: VM) throws {
-        guard case .instance(var list) = vm.getSlot(0) else {
+        guard case .instance(let list) = vm.getSlot(0) else {
             try vm.runtimeError(message: "Expected a List instance in slot 0.")
             return
         }
         
-        var data: ListData = list.foreignData as! ListData
+        let data: ListData = list.foreignData as! ListData
         
         let value = vm.getSlot(1)
         
@@ -273,21 +390,22 @@ public struct CoreList: CoreType {
     ///
     /// `List.removeAt(index) -> item`
     private static func removeAt(vm: VM) throws {
-        guard case .instance(var list) = vm.getSlot(0) else {
+        guard case .instance(let list) = vm.getSlot(0) else {
             try vm.runtimeError(message: "Expected a List instance in slot 0.")
             return
         }
         
-        var data: ListData = list.foreignData as! ListData
+        let data: ListData = list.foreignData as! ListData
         
         // Get `index` and assert it's an integer.
-        guard case .number(var index) = vm.getSlot(1) else {
+        guard case .number(let index) = vm.getSlot(1) else {
             try vm.runtimeError(message: "`index` must be an integer.")
             return
         }
         
         guard var index = Int(exactly: index) else {
             try vm.runtimeError(message: "`index` must be an integer.")
+            return
         }
         
         // Adjust `index`, accounting for backwards counting.
@@ -317,30 +435,32 @@ public struct CoreList: CoreType {
     ///
     /// `List.swap(index0, index1) -> nothing`
     private static func swap(vm: VM) throws {
-        guard case .instance(var list) = vm.getSlot(0) else {
+        guard case .instance(let list) = vm.getSlot(0) else {
             try vm.runtimeError(message: "Expected a List instance in slot 0.")
             return
         }
         
-        var data: ListData = list.foreignData as! ListData
+        let data: ListData = list.foreignData as! ListData
         
         // Get the indexes and assert they are both integers.
-        guard case .number(var index0) = vm.getSlot(1) else {
+        guard case .number(let index0) = vm.getSlot(1) else {
             try vm.runtimeError(message: "`index0` must be an integer.")
             return
         }
         
-        guard var index0 = Int(exactly: index0) else {
+        guard let index0 = Int(exactly: index0) else {
             try vm.runtimeError(message: "`index0` must be an integer.")
+            return
         }
         
-        guard case .number(var index1) = vm.getSlot(2) else {
+        guard case .number(let index1) = vm.getSlot(2) else {
             try vm.runtimeError(message: "`index1` must be an integer.")
             return
         }
         
-        guard var index1 = Int(exactly: index1) else {
+        guard let index1 = Int(exactly: index1) else {
             try vm.runtimeError(message: "`index1` must be an integer.")
+            return
         }
         
         // Bounds check.
@@ -366,12 +486,12 @@ public struct CoreList: CoreType {
     ///
     /// `List.toString -> String`
     private static func toString(vm: VM) throws {
-        guard case .instance(var list) = vm.getSlot(0) else {
+        guard case .instance(let list) = vm.getSlot(0) else {
             try vm.runtimeError(message: "Expected a List instance in slot 0.")
             return
         }
         
-        var data: ListData = list.foreignData as! ListData
+        let data: ListData = list.foreignData as! ListData
         
         var s: [String] = []
         for item in data.items {
@@ -383,6 +503,79 @@ public struct CoreList: CoreType {
         vm.setReturn(.string(result))
     }
     
+    /// Returns the value at the specified index.
+    ///
+    /// Assumes:
+    /// - Slot 0 contains a List instance.
+    /// - Slot 1 is the index (needs to be an integer double or a positive range).
+    ///
+    /// `List.[index]`
+
+    private static func subscript_(vm: VM) throws {
+        guard case .instance(let list) = vm.getSlot(0) else {
+            try vm.runtimeError(message: "Expected a List instance in slot 0.")
+            return
+        }
+        
+        let data: ListData = list.foreignData as! ListData
+        
+        // The index can be an integer or a positive range.
+        switch vm.getSlot(1) {
+        case .number(let index):
+            guard var index = Int(exactly: index) else {
+                try vm.runtimeError(message: "Subscript index must be an integer or a range.")
+                return
+            }
+            
+            // E.g: list[3].
+            
+            // Adjust `index`, accounting for backwards counting.
+            index = index >= 0 ? index : data.count + index
+            
+            if index < 0 || index > data.lastIndex {
+                try vm.runtimeError(message: "List index is out of bounds.")
+                return
+            }
+            
+            vm.setReturn(data.items[index])
+            return
+            
+        case .instance(let range):
+            guard range.klass.name == "List" else {
+                try vm.runtimeError(message: "Subscript index must be an integer or a range.")
+                return
+            }
+            
+            // E.g: list[1...2].
+            
+            var newListItems: [Value] = []
+            for value in (range.foreignData as! ListData).items {
+                guard case .number(let v) = value else {
+                    try vm.runtimeError(message: "Expected range index to be a positive integer, instead got \(value).")
+                    return
+                }
+                
+                guard let rangeIndex = Int(exactly: v) else {
+                    try vm.runtimeError(message: "Expected range index to be a positive integer, instead got \(v).")
+                    return
+                }
+                
+                if rangeIndex < 0 || rangeIndex > data.lastIndex {
+                    try vm.runtimeError(message: "Range index iis out of bounds (\(rangeIndex).")
+                    return
+                }
+                newListItems.append(data.items[rangeIndex])
+            }
+         
+            vm.setReturn(.instance(vm.newList(items: newListItems)))
+            return
+            
+        default:
+            try vm.runtimeError(message: "Subscript index must be an integer or a range.")
+            return
+        }
+    }
+    
     /// Assigns a value to a specified index.
     ///
     /// Assumes:
@@ -392,12 +585,12 @@ public struct CoreList: CoreType {
     ///
     /// `List.[index]=(value)`
     private static func subscriptSetter(vm: VM) throws {
-        guard case .instance(var list) = vm.getSlot(0) else {
+        guard case .instance(let list) = vm.getSlot(0) else {
             try vm.runtimeError(message: "Expected a List instance in slot 0.")
             return
         }
         
-        var data: ListData = list.foreignData as! ListData
+        let data: ListData = list.foreignData as! ListData
         
         guard case .number(let index) = vm.getSlot(1) else {
             try vm.runtimeError(message: "The subscript index must be an integer.")
