@@ -756,8 +756,7 @@ public class VM {
             throw error(message: "The foreign class allocation callback for the KeyValue class has not yet been implemented.")
             
         case "List":
-            // TODO: Implement
-            throw error(message: "The foreign class allocation callback for the List class has not yet been implemented.")
+            return CoreList.allocate
             
         case "Map":
             // TODO: Implement
@@ -807,8 +806,7 @@ public class VM {
             throw error(message: "The foreign methods for the KeyValue class have not yet been implemented.")
             
         case "List":
-            // TODO: Implement.
-            throw error(message: "The foreign methods for the List class have not yet been implemented.")
+            return CoreList.bindForeignMethod(signature: signature, isStatic: isStatic)
             
         case "Map":
             // TODO: Implement.

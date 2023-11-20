@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct ListData {
+public class ListData {
     /// The number of items in the array.
     public var count: Int { return items.count }
     
@@ -17,7 +17,7 @@ public struct ListData {
     /// The index of the last item in the array or `-1` if the list is empty.
     public var lastIndex: Int { return items.count - 1 }
     
-    public init(items: [Value]?) {
+    public init(items: [Value]? = nil) {
         self.items = items ?? []
     }
 }
