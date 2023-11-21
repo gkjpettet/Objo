@@ -781,8 +781,7 @@ public class VM {
             return CoreString.allocate
             
         case "System":
-            // TODO: Implement
-            throw error(message: "The foreign class allocation callback for the System class has not yet been implemented.")
+            return CoreSystem.allocate
             
         default:
             return nil
@@ -829,8 +828,7 @@ public class VM {
             return CoreString.bindForeignMethod(signature: signature, isStatic: isStatic)
             
         case "System":
-            // TODO: Implement.
-            throw error(message: "The foreign methods for the System class have not yet been implemented.")
+            return CoreSystem.bindForeignMethod(signature: signature, isStatic: isStatic)
             
         default:
             return nil
