@@ -752,8 +752,7 @@ public class VM {
             return CoreBoolean.allocate
             
         case "KeyValue":
-            // TODO: Implement
-            throw error(message: "The foreign class allocation callback for the KeyValue class has not yet been implemented.")
+            return CoreKeyValue.allocate
             
         case "List":
             return CoreList.allocate
@@ -802,8 +801,7 @@ public class VM {
             return CoreBoolean.bindForeignMethod(signature: signature, isStatic: isStatic)
             
         case "KeyValue":
-            // TODO: Implement.
-            throw error(message: "The foreign methods for the KeyValue class have not yet been implemented.")
+            return CoreKeyValue.bindForeignMethod(signature: signature, isStatic: isStatic)
             
         case "List":
             return CoreList.bindForeignMethod(signature: signature, isStatic: isStatic)
