@@ -174,9 +174,6 @@ public class Parser {
     /// The index in `tokens` of the token currently being processed.
     private var currentIndex: Int = -1
     
-    /// Any errors that have occurred during the parsing process.
-    private(set) var errors: [ParserError] = []
-    
     /// The previously evaluated token (will be `nil` when the parser begins).
     private var _previous: Token?
     
@@ -184,6 +181,9 @@ public class Parser {
     private var tokens: [Token] = []
     
     // MARK: - Public properties
+    
+    /// Any errors that have occurred during the parsing process.
+    public var errors: [ParserError] = []
     
     /// `true` if any errors occurred during the last parsing phase.
     public var hasError: Bool { return errors.count > 0 }
