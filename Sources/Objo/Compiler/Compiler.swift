@@ -250,6 +250,10 @@ public class Compiler: ExprVisitor, StmtVisitor {
             }
         }
         
+//        if name == "fib" {
+//            let a = 10
+//        }
+        
         // Compile the function's body.
         for stmt in body.statements {
             try stmt.accept(self)
@@ -1394,7 +1398,19 @@ public class Compiler: ExprVisitor, StmtVisitor {
         // We walk backwards so we find the _last_ declared variable named `name`
         // which ensures that inner local variables correctly shadow locals with the
         // same name in surrounding scopes.
-        for (i, local) in locals.reversed().enumerated() {
+
+//        for (i, local) in locals.reversed().enumerated() {
+//            if name == local.name {
+//                // Ensure that this local variable has been initialised.
+//                if local.depth == -1 {
+//                    try error(message: "You can't read a local variable in its own initialiser.")
+//                }
+//                return i
+//            }
+//        }
+        
+        for i in stride(from: locals.count - 1, through: 0, by: -1) {
+            let local = locals[i]
             if name == local.name {
                 // Ensure that this local variable has been initialised.
                 if local.depth == -1 {

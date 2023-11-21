@@ -84,7 +84,7 @@ public struct Chunk {
     /// Writes a byte to this chunk.
     ///
     /// - Parameter token: The parser token that generated this byte of data.
-    mutating public func writeByte(_ byte: UInt8, token: Token) {
+    mutating public func writeByte(_ byte: UInt8, token: Token) {        
         code.append(byte)
         lines.append(token.line)
         scriptID.append(token.scriptId)

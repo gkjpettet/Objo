@@ -584,19 +584,28 @@ public class VM {
                 try invokeBinary(signature: "...(_)")
                 
             case .return_:
-                // Pop the return value off the stack and put it in slot 0 of the API slots array so the host application can access it.
-                slots[0] = pop()
+                // Pop the return value off the stack.
+                let result = pop()
                 
-                // Pop this callframe
-                frames.removeLast()
+                // Put it in slot 0 of the slots array so the host application can access it.
+                slots[0] = result
                 
-                if frameCount == 0 {
+                if frameCount == 1 { // 1 not 0 because we haven't popped the callframe yet.
                     // Exit the VM.
                     stackTop = 0
                     _isRunning = false
                     finished?()
                     return
                 }
+                
+                // Reset the stack top to what it was prior to this call.
+                stackTop = currentFrame.stackBase
+                
+                // Push the result to the top of the stack.
+                push(result)
+                
+                // Pop this callframe.
+                frames.removeLast()
                 
             case .setField:
                 try setField(fieldIndex: Int(readByte()))
