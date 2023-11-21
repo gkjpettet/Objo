@@ -778,8 +778,7 @@ public class VM {
             return CoreObject.allocate
             
         case "Random":
-            // TODO: Implement
-            throw error(message: "The foreign class allocation callback for the Random class has not yet been implemented.")
+            return CoreRandom.allocate
             
         case "String":
             return CoreString.allocate
@@ -824,8 +823,7 @@ public class VM {
             return CoreObject.bindForeignMethod(signature: signature, isStatic: isStatic)
             
         case "Random":
-            // TODO: Implement.
-            throw error(message: "The foreign methods for the Random class have not yet been implemented.")
+            return CoreRandom.bindForeignMethod(signature: signature, isStatic: isStatic)
             
         case "String":
             return CoreString.bindForeignMethod(signature: signature, isStatic: isStatic)
