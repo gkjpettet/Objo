@@ -49,6 +49,9 @@ public class VM {
     /// The VM's singleton instance of `nothing`. Will be nil whilst bootstrapping.
     private(set) var nothing: Nothing?
     
+    /// The singleton `Random` instance. Will be nil until first accessed through `Maths.random()`.
+    public var randomInstance: Instance?
+    
     /// The API slot array. Used to pass data between the VM and the host application.
     public var slots: [Value?] = []
     
@@ -101,9 +104,6 @@ public class VM {
     /// A reference to the built-in Number class. Will be nil whilst bootstrapping.
     private(set) var numberClass: Klass?
     
-    /// The singleton Random instance. Will be nil until first accessed through `Maths.random()`.
-    private var randomInstance: Instance?
-    
     /// If `true` then the VM should stop at the next opportunity (prior to the next instruction fetch).
     /// Only works when `debugMode == true`.
     private var shouldStop = false
@@ -119,6 +119,11 @@ public class VM {
     private(set) var stringClass: Klass?
     
     // MARK: - Public methods
+    
+    /// Returns a top-level variable named `name`.
+    public func getVariable(name: String) -> Value? {
+        return globals[name]
+    }
     
     /// Initialises the VM and interprets the passed function.
     /// Use this to interpret a top level function.
@@ -761,8 +766,7 @@ public class VM {
             return CoreMap.allocate
             
         case "Maths":
-            // TODO: Implement
-            throw error(message: "The foreign class allocation callback for the Maths class has not yet been implemented.")
+            return CoreMaths.allocate
             
         case "Nothing":
             return CoreNothing.allocate
@@ -808,8 +812,7 @@ public class VM {
             return CoreMap.bindForeignMethod(signature: signature, isStatic: isStatic)
             
         case "Maths":
-            // TODO: Implement.
-            throw error(message: "The foreign methods for the Maths class have not yet been implemented.")
+            return CoreMaths.bindForeignMethod(signature: signature, isStatic: isStatic)
             
         case "Nothing":
             return CoreNothing.bindForeignMethod(signature: signature, isStatic: isStatic)
