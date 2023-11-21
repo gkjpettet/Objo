@@ -94,6 +94,40 @@ public struct CoreKeyValue: CoreType {
         vm.setReturn(data.value)
     }
     
+    /// Sets the key.
+    ///
+    /// `KeyValue.key=(k)`
+    private static func setKey(vm: VM) throws {
+        guard case .instance(let instance) = vm.getSlot(0) else {
+            try vm.runtimeError(message: "Expected a KeyValue instance in slot 0.")
+            return
+        }
+        
+        guard instance.foreignData is KeyValueData else {
+            try vm.runtimeError(message: "Expected the foreign data of the instance in slot 0 to be `KeyValueData`.")
+            return
+        }
+        
+        (instance.foreignData as! KeyValueData).key = vm.getSlot(1)
+    }
+    
+    /// Sets the value.
+    ///
+    /// `KeyValue.value=(v)`
+    private static func setValue(vm: VM) throws {
+        guard case .instance(let instance) = vm.getSlot(0) else {
+            try vm.runtimeError(message: "Expected a KeyValue instance in slot 0.")
+            return
+        }
+        
+        guard instance.foreignData is KeyValueData else {
+            try vm.runtimeError(message: "Expected the foreign data of the instance in slot 0 to be `KeyValueData`.")
+            return
+        }
+        
+        (instance.foreignData as! KeyValueData).value = vm.getSlot(1)
+    }
+    
     /// Returns this key-value as a string ("key : value").
     ///
     /// `KeyValue.toString() -> string`

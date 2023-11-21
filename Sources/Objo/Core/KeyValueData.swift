@@ -7,10 +7,15 @@
 
 import Foundation
 
-public struct KeyValueData {
+public class KeyValueData {
     /// The key.
-    public let key: Value
+    public var key: Value
     
     /// The value.
-    public let value: Value
+    public var value: Value
+    
+    public init(key: Value, value: Value) {
+        self.key = key
+        self.value = value
+    }
 }
