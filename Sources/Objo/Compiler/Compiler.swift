@@ -153,7 +153,7 @@ public class Compiler: ExprVisitor, StmtVisitor {
     private(set) var locals: [LocalVariable] = []
     
     /// This compiler's internal parser.
-    private(set) var parser: Parser = Parser()
+    public var parser: Parser = Parser()
     
     /// The time taken for the last parsing phase.
     private var parseTime: TimeInterval?
