@@ -118,6 +118,10 @@ public class VM {
     /// A reference to the built-in String class. Will be nil whilst bootstrapping.
     private(set) var stringClass: Klass?
     
+    // MARK: - Initialisers
+    
+    public init() {}
+    
     // MARK: - Public methods
     
     /// Returns a top-level variable named `name`.
