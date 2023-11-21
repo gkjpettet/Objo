@@ -758,8 +758,7 @@ public class VM {
             return CoreList.allocate
             
         case "Map":
-            // TODO: Implement
-            throw error(message: "The foreign class allocation callback for the Map class has not yet been implemented.")
+            return CoreMap.allocate
             
         case "Maths":
             // TODO: Implement
@@ -807,8 +806,7 @@ public class VM {
             return CoreList.bindForeignMethod(signature: signature, isStatic: isStatic)
             
         case "Map":
-            // TODO: Implement.
-            throw error(message: "The foreign methods for the Map class have not yet been implemented.")
+            return CoreMap.bindForeignMethod(signature: signature, isStatic: isStatic)
             
         case "Maths":
             // TODO: Implement.
