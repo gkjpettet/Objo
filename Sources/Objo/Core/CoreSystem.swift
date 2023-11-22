@@ -61,7 +61,8 @@ public struct CoreSystem: CoreType {
             return
         }
         
-        let ms = Int(bootDate.timeIntervalSince1970 * 1000)
+        let now = Date()
+        let ms = Int((now.timeIntervalSince1970 - bootDate.timeIntervalSince1970) * 1000)
         vm.setReturn(.number(Double(ms)))
     }
     

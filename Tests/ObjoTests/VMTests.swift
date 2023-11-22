@@ -66,9 +66,9 @@ final class VMTests: XCTestCase {
 
             var start = System.clock
 
-            System.print(fib(20))
-
-            System.print((System.clock - start)/1000 + " ms")
+            System.print(fib(10))
+            
+            System.print((System.clock - start) + " ms")
             """
             
             let f = try compiler.compile(source: source, debugMode: true, scriptID: 0)
