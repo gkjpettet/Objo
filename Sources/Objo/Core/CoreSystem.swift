@@ -62,8 +62,8 @@ public struct CoreSystem: CoreType {
         }
         
         let now = Date()
-        let ms = Int((now.timeIntervalSince1970 - bootDate.timeIntervalSince1970) * 1000)
-        vm.setReturn(.number(Double(ms)))
+        let microseconds = Int((now.timeIntervalSince1970 - bootDate.timeIntervalSince1970) * 1000000)
+        vm.setReturn(.number(Double(microseconds)))
     }
     
     /// Computes a string representation of the passed argument and calls the VM's
