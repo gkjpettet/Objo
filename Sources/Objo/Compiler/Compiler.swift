@@ -797,6 +797,7 @@ public class Compiler: ExprVisitor, StmtVisitor {
         
         // Compute the offset to subtract from the VM's instruction pointer.
         // +2 accounts for the `loop` instruction's own operands which we also need to jump over.
+        // TODO: Bug? The opcode before the invalid VM switch is .loop followed by value 130
         let offset = currentChunk.length - loopStart + 2
         
         if offset > MAX_JUMP {

@@ -20,7 +20,9 @@ public struct Disassembler {
         var offset = 0
         var result: [String] = []
         while offset < function.chunk.length {
-            try result.append(disassembleInstruction(chunk: function.chunk, offset: &offset))
+            // We will prefix the instruction with the offset.
+            let offsetString = String(format: "%05d", offset) + "\t"
+            try result.append(offsetString + disassembleInstruction(chunk: function.chunk, offset: &offset))
         }
         
         return result.joined(separator: "\n")
@@ -366,7 +368,7 @@ public struct Disassembler {
             throw DisassemblerError.unknownOpcode(opcode: opcode, offset: offset)
         }
         
-        // The instructions name.
+        // The instruction's name.
         var details = name.padding(toLength: 2 * COLUMN_WIDTH, withPad: " ", startingAt: 0)
         
         // Append the constant table index.

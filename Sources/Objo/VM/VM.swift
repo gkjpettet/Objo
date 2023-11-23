@@ -10,6 +10,8 @@ import Foundation
 public class VM {
     // MARK: - Static properties
     
+    private var lastOpcode: Opcode = .breakpoint
+    
     /// The upper bounds of the API slot array. Limited to 255 arguments since the argument count for many opcodes is a single byte.
     private static let MAX_SLOTS = 255
     
@@ -447,7 +449,7 @@ public class VM {
             case .jump:
                 // Unconditionally jump the specified offset from the current instruction pointer.
                 // +2 accounts for the 2 bytes we read.
-                currentFrame.ip += readUInt16() + 2
+                currentFrame.ip = currentFrame.ip + readUInt16() + 2
                 
             case .jumpIfFalse:
                 // Jump `offset` bytes from the current instruction pointer _if_ the value on the top of the stack is falsey.
@@ -518,7 +520,7 @@ public class VM {
             case .loop:
                 // Unconditionally jump the specified offset back from the current instruction pointer.
                 // +2 accounts for the 2 bytes we read.
-                currentFrame.ip -= readUInt16() + 2
+                currentFrame.ip = currentFrame.ip - readUInt16() + 2
                 
             case .map:
                 try newMapLiteral(keyValueCount: Int(readByte()))
@@ -720,6 +722,8 @@ public class VM {
             lastInstructionFrame = currentFrame
             
             _isRunning = false
+            
+            lastOpcode = opcode
         }
     }
     
@@ -1438,7 +1442,7 @@ public class VM {
             // This really shouldn't happen since `callClass()` put the instance where it should be...
             throw error(message: "`callClass()` failed to put a List instance on the top of the stack.")
         }
-        listInstance.foreignData = items
+        (listInstance.foreignData as! ListData).items = items
     }
     
     /// Creates a new `Map` instance. The compiler will have placed the `Map` class on the stack
@@ -1446,10 +1450,10 @@ public class VM {
     private func newMapLiteral(keyValueCount: Int) throws {
         // Pop and store any optional initial key-values.
         // These are compiled so the key is above the value on the stack.
-        var keyValues: [Value : Value] = [:]
+        let mapData = MapData()
         if keyValueCount > 0 {
             for _ in 1...keyValueCount {
-                keyValues[pop()] = pop()
+                mapData.data[pop()] = pop()
             }
         }
         
@@ -1466,7 +1470,7 @@ public class VM {
         }
         
         // Set the instance's foreign data to the key-values we popped off the stack.
-        mapInstance.foreignData = keyValues
+        mapInstance.foreignData = mapData
     }
     
     /// Returns the value `distance` from the top of the stack.
