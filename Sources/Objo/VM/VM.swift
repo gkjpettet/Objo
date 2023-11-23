@@ -877,8 +877,10 @@ public class VM {
         if klass.isForeign {
             let stackBase = stackTop - argCount - 1
             var arguments: [Value] = []
-            for i in 1...argCount {
-                arguments.append(stack[stackBase + i]!)
+            if argCount > 0 {
+                for i in 1...argCount {
+                    arguments.append(stack[stackBase + i]!)
+                }
             }
             
             guard case .instance(let instance) = stack[stackBase] else {
