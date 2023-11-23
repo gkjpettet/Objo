@@ -1418,8 +1418,10 @@ public class VM {
     private func newListLiteral(itemCount: Int) throws {
         // Pop and store any optional initial elements.
         var items: [Value] = []
-        for _ in 1...itemCount {
-            items.insert(pop(), at: 0)
+        if itemCount > 0 {
+            for _ in 1...itemCount {
+                items.insert(pop(), at: 0)
+            }
         }
         
         // Call the default `List` constructor.
@@ -1443,8 +1445,10 @@ public class VM {
         // Pop and store any optional initial key-values.
         // These are compiled so the key is above the value on the stack.
         var keyValues: [Value : Value] = [:]
-        for _ in 1...keyValueCount {
-            keyValues[pop()] = pop()
+        if keyValueCount > 0 {
+            for _ in 1...keyValueCount {
+                keyValues[pop()] = pop()
+            }
         }
         
         guard case .klass(let klass) = peek(0) else {
